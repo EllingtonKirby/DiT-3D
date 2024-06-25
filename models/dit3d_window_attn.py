@@ -13,13 +13,11 @@ import torch
 import torch.nn as nn
 import numpy as np
 import math
-from timm.models.layers import to_2tuple
-from timm.models.vision_transformer import PatchEmbed, Mlp
+from timm.models.vision_transformer import Mlp
 
 from modules.voxelization import Voxelization
 import modules.functional as F
-
-from utils_vit import *
+from modules.utils_vit import *
 
 
 def modulate(x, shift, scale):
@@ -173,12 +171,59 @@ class LabelEmbedder(nn.Module):
         return labels
 
     def forward(self, labels, train, force_drop_ids=None):
-        use_dropout = self.dropout_prob > 0
-        if (train and use_dropout) or (force_drop_ids is not None):
-            labels = self.token_drop(labels, force_drop_ids)
+        # use_dropout = self.dropout_prob > 0
+        # if (train and use_dropout) or (force_drop_ids is not None):
+        #     labels = self.token_drop(labels, force_drop_ids)
         embeddings = self.embedding_table(labels)
         return embeddings
 
+class ConditionEmbedder(nn.Module):
+    """
+    Embeds conditions into fourier features
+    """
+    def __init__(self, hidden_size, frequency_embedding_size=256, num_cyclic_conditions=2):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(frequency_embedding_size, hidden_size, bias=True),
+            nn.SiLU(),
+            nn.Linear(hidden_size, hidden_size, bias=True),
+        )
+        self.frequency_embedding_size = frequency_embedding_size
+        self.num_cyclic_conditions = num_cyclic_conditions
+
+    @staticmethod
+    def cyclic_embedding(condition, dim):
+        batch_size, _ = condition.shape
+        half_dim = dim // 2
+
+        frequencies = (- torch.arange(0, half_dim) * np.log(10000) / (half_dim - 1)).exp()
+        frequencies = frequencies[None, None, :].repeat(batch_size, 1, 1).cuda()
+
+        sin_sin_emb = ((condition[:, :, None]).sin() * frequencies).sin()
+        sin_cos_emb = ((condition[:, :, None]).cos() * frequencies).sin()
+        emb = torch.cat([sin_sin_emb, sin_cos_emb], dim=2)
+        
+        if dim % 2:  # zero pad
+            emb = nn.functional.pad(emb, (0, 1), "constant", 0)
+        return emb
+    
+    @staticmethod
+    def positional_embedding(condition, dim):
+        half_dim = dim // 2
+        emb = np.ones(condition.shape[0]) * np.log(10000) / (half_dim - 1)
+        emb = torch.from_numpy(np.exp(np.arange(0, half_dim) * -emb[:,None])).float().to(torch.device('cuda'))
+        emb = condition[:, :, None] * emb[:, None, :]
+        emb = torch.cat([torch.sin(emb), torch.cos(emb)], dim=2)
+        if dim % 2:  # zero pad
+            emb = nn.functional.pad(emb, (0, 1), "constant", 0)
+        return emb
+
+    def forward(self, c):
+        c_freq_cyc = self.cyclic_embedding(c[:, :self.num_cyclic_conditions], self.frequency_embedding_size)
+        c_freq_pos = self.positional_embedding(c[:, self.num_cyclic_conditions:], self.frequency_embedding_size)
+        c_freq = torch.concat((c_freq_cyc, c_freq_pos), 1)
+        c_emb = self.mlp(c_freq)
+        return c_emb
 
 #################################################################################
 #                                 Core DiT Model                                #
@@ -307,6 +352,7 @@ class DiT(nn.Module):
         
         self.t_embedder = TimestepEmbedder(hidden_size)
         self.y_embedder = LabelEmbedder(num_classes, hidden_size, class_dropout_prob)
+        self.c_embedder = ConditionEmbedder(hidden_size)
 
         # Will use fixed sin-cos embedding:
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, hidden_size), requires_grad=False)
@@ -348,6 +394,10 @@ class DiT(nn.Module):
         nn.init.normal_(self.t_embedder.mlp[0].weight, std=0.02)
         nn.init.normal_(self.t_embedder.mlp[2].weight, std=0.02)
 
+        # Initialize condition embedding MLP:
+        nn.init.normal_(self.c_embedder.mlp[0].weight, std=0.02)
+        nn.init.normal_(self.c_embedder.mlp[2].weight, std=0.02)
+
         # Zero-out adaLN modulation layers in DiT blocks:
         for block in self.blocks:
             nn.init.constant_(block.adaLN_modulation[-1].weight, 0)
@@ -374,12 +424,13 @@ class DiT(nn.Module):
         points = x0.reshape(shape=(x0.shape[0], c, x * p, y * p, z * p))
         return points
 
-    def forward(self, x, t, y):
+    def forward(self, x, t, y, c):
         """
         Forward pass of DiT.
         x: (N, C, P) tensor of spatial inputs (point clouds or latent representations of images)
         t: (N,) tensor of diffusion timesteps
         y: (N,) tensor of class labels
+        c: (N, C) tensor of conditioning information
         """
 
         # Voxelization
@@ -389,9 +440,10 @@ class DiT(nn.Module):
         x = self.x_embedder(x) 
         x = x + self.pos_embed
 
-        t = self.t_embedder(t)                  
-        y = self.y_embedder(y, self.training)    
-        c = t + y                           
+        t = self.t_embedder(t).unsqueeze(1)
+        y = self.y_embedder(y, self.training)
+        c = self.c_embedder(c)
+        c = torch.cat((t, y, c), dim=1).sum(dim=1)                     
 
         for block in self.blocks:
             x = block(x, c)                      

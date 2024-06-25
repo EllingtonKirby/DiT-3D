@@ -12,7 +12,8 @@ from pytorch_lightning import LightningDataModule
 from diffusers import DPMSolverMultistepScheduler
 from random import shuffle
 from modules.scheduling import beta_func
-from models.dit3d import DiT3D_models, DiT_S_32
+from models.dit3d import DiT3D_models
+from models.dit3d_window_attn import DiT3D_models_WindAttn
 from modules.metrics import ChamferDistance, PrecisionRecall
 from modules.three_d_helpers import build_two_point_clouds
 
@@ -75,7 +76,13 @@ class DiT3D_Diffuser(LightningModule):
         self.dpm_scheduler.set_timesteps(self.s_steps)
         self.scheduler_to_cuda()
 
-        self.model = DiT_S_32().cuda()
+        if self.hparams['model']['attention'] == 'window':
+            self.model = DiT3D_models_WindAttn[self.hparams['model']['config']](
+                window_size=4, 
+                window_block_indexes=(0,3,6,9)
+            ).cuda()
+        else:
+            self.model = DiT3D_models[self.hparams['model']['config']]().cuda()
 
         self.chamfer_distance = ChamferDistance()
         self.precision_recall = PrecisionRecall(self.hparams['data']['resolution'],2*self.hparams['data']['resolution'],100)
@@ -94,12 +101,12 @@ class DiT3D_Diffuser(LightningModule):
         self.dpm_scheduler.sigmas = self.dpm_scheduler.sigmas.cuda()
 
     def q_sample(self, x, t, noise):
-        return self.sqrt_alphas_cumprod[t][:,None].cuda() * x + \
-                self.sqrt_one_minus_alphas_cumprod[t][:,None].cuda() * noise
+        return self.sqrt_alphas_cumprod[t][:,None,None].cuda() * x + \
+                self.sqrt_one_minus_alphas_cumprod[t][:,None,None].cuda() * noise
 
-    def classfree_forward(self, x_t, t, x_class):
-        x_cond = self.forward(x_t, t, x_class)            
-        x_uncond = self.forward(x_t, t,  x_class)
+    def classfree_forward(self, x_t, t, x_class, x_cond, x_uncond):
+        x_cond = self.forward(x_t, t, x_class, x_cond)            
+        x_uncond = self.forward(x_t, t,  x_class, x_uncond)
 
         return x_uncond + self.w_uncond * (x_cond - x_uncond)
 
@@ -115,41 +122,38 @@ class DiT3D_Diffuser(LightningModule):
         pcd.colors = o3d.utility.Vector3dVector(colors)
         return pcd
 
-    def p_sample_loop(self, x_t, x_class):
+    def p_sample_loop(self, x_t, x_class, x_cond, x_uncond):
         self.scheduler_to_cuda()
 
         for t in tqdm(range(len(self.dpm_scheduler.timesteps))):
-            t = torch.empty(x_class.shape[0], dtype=torch.int64, device=self.device).fill_(self.dpm_scheduler.timesteps[t])
+            t = torch.ones(x_t.shape[0]).cuda().long() * self.dpm_scheduler.timesteps[t].cuda()
           
-            noise_t = self.classfree_forward(x_t, t, x_class)
+            noise_t = self.classfree_forward(x_t, t, x_class, x_cond, x_uncond)
             input_noise = x_t
 
             x_t = self.dpm_scheduler.step(noise_t, t[0], input_noise)['prev_sample']
             
-            torch.cuda.empty_cache()
-
         return x_t
 
     def p_losses(self, y, noise):
         return F.mse_loss(y, noise)
 
-    def forward(self, x, t, y):
-        out = self.model(x, t, y)
-        torch.cuda.empty_cache()
+    def forward(self, x, t, y, c):
+        out = self.model(x, t, y, c)
         return out
 
     def training_step(self, batch:dict, batch_idx):
         # initial random noise
-        torch.cuda.empty_cache()
-        noise = torch.randn(batch['pcd_object'].shape, device=self.device)
+        x_object = batch['pcd_object'].cuda()
+        noise = torch.randn(x_object.shape, device=self.device)
         
         # sample step t
         t = torch.randint(0, self.t_steps, size=(noise.shape[0],)).cuda()
         # sample q at step t
-        t_sample = self.q_sample(batch['pcd_object'], t, noise).float()
+        t_sample = self.q_sample(x_object, t, noise).float()
 
         # for classifier-free guidance switch between conditional and unconditional training
-        if torch.rand(1) > self.hparams['train']['uncond_prob'] or batch['pcd_object'].shape[0] == 1:
+        if torch.rand(1) > self.hparams['train']['uncond_prob'] or x_object.shape[0] == 1:
             x_center = batch['center']
             x_size = batch['size']
             x_orientation = batch['orientation']
@@ -168,7 +172,7 @@ class DiT3D_Diffuser(LightningModule):
         else:
             x_cond = torch.hstack((x_center, x_size, x_orientation))
 
-        denoise_t = self.forward(t_sample, t, x_class)
+        denoise_t = self.forward(t_sample, t, x_class, x_cond)
         loss_mse = self.p_losses(denoise_t, noise)
         loss_mean = (denoise_t.mean())**2
         loss_std = (denoise_t.std() - 1.)**2
@@ -181,11 +185,20 @@ class DiT3D_Diffuser(LightningModule):
         self.log('train/loss', loss)
         self.log('train/var', std_noise.var())
         self.log('train/std', std_noise.std())
-        torch.cuda.empty_cache()
 
         return loss
 
     def validation_step(self, batch:dict, batch_idx):
+        self.dpm_scheduler = DPMSolverMultistepScheduler(
+                num_train_timesteps=self.t_steps,
+                beta_start=self.hparams['diff']['beta_start'],
+                beta_end=self.hparams['diff']['beta_end'],
+                beta_schedule='linear',
+                algorithm_type='sde-dpmsolver++',
+                solver_order=2,
+        )
+        self.dpm_scheduler.set_timesteps(self.s_steps)
+        self.scheduler_to_cuda()
         self.model.eval()
         with torch.no_grad():
             x_object = batch['pcd_object']
@@ -204,31 +217,23 @@ class DiT3D_Diffuser(LightningModule):
             x_uncond = torch.zeros_like(x_cond)
 
             x_t = torch.randn(x_object.shape, device=self.device)
-            x_gen_eval = self.p_sample_loop(x_t, batch['class']).permute(0,2,1).squeeze(0)
+            x_gen_eval = self.p_sample_loop(x_t, batch['class'], x_cond, x_uncond).permute(0,2,1).squeeze(0)
             x_object = x_object.permute(0,2,1).squeeze(0)
 
-            curr_index = 0
             cd_mean_as_pct_of_box = []
-
-            pcd_pred, pcd_gt = build_two_point_clouds(genrtd_pcd=x_gen_eval, object_pcd=x_object)
-
-            self.chamfer_distance.update(pcd_gt, pcd_pred)
-            self.precision_recall.update(pcd_gt, pcd_pred)
             
-            # for pcd_index in range(batch['num_points'].shape[0]):
-            #     max_index = int(curr_index + batch['num_points'][pcd_index].item())
-            #     object_pcd = x_object[curr_index:max_index]
-            #     genrtd_pcd = x_gen_eval[curr_index:max_index]
+            for pcd_index in range(batch['num_points'].shape[0]):
+                object_pcd = x_object[pcd_index].squeeze(0)
+                genrtd_pcd = x_gen_eval[pcd_index].squeeze(0)
 
-            #     pcd_pred, pcd_gt = build_two_point_clouds(genrtd_pcd=genrtd_pcd, object_pcd=object_pcd)
+                pcd_pred, pcd_gt = build_two_point_clouds(genrtd_pcd=genrtd_pcd, object_pcd=object_pcd)
 
-            #     self.chamfer_distance.update(pcd_gt, pcd_pred)
-            #     self.precision_recall.update(pcd_gt, pcd_pred)
+                self.chamfer_distance.update(pcd_gt, pcd_pred)
+                self.precision_recall.update(pcd_gt, pcd_pred)
 
-            #     last_cd = self.chamfer_distance.last_cd()
-            #     box = batch['size'][pcd_index].cpu()
-            #     cd_mean_as_pct_of_box.append((last_cd / box.mean())*100.)
-            #     curr_index = max_index
+                last_cd = self.chamfer_distance.last_cd()
+                box = batch['size'][pcd_index].cpu()
+                cd_mean_as_pct_of_box.append((last_cd / box.mean())*100.)
 
         cd_mean, cd_std = self.chamfer_distance.compute()
         cd_mean_as_pct_of_box = np.mean(cd_mean_as_pct_of_box)
@@ -237,7 +242,6 @@ class DiT3D_Diffuser(LightningModule):
         self.log('val/cd_mean', cd_mean, on_step=True)
         self.log('val/cd_std', cd_std, on_step=True)
         self.log('val/cd_mean_as_pct_of_box', cd_mean_as_pct_of_box, on_step=True)
-        torch.cuda.empty_cache()
 
         return {'val/cd_mean': cd_mean, 'val/cd_std': cd_std, 'val/cd_as_pct_of_box':cd_mean_as_pct_of_box}
     
