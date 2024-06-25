@@ -43,13 +43,13 @@ class NuscenesObjectsSet(Dataset):
         object_points = torch.from_numpy(points[points_from_object])[:,:3]
 
         if self.points_per_object > 0:
-            pcd_object = o3d.geometry.PointCloud()
-            pcd_object.points = o3d.utility.Vector3dVector(object_points)
 
             if object_points.shape[0] > self.points_per_object:
+                pcd_object = o3d.geometry.PointCloud()
+                pcd_object.points = o3d.utility.Vector3dVector(object_points)
                 pcd_object = pcd_object.farthest_point_down_sample(self.points_per_object)
-            
-            object_points = torch.tensor(np.array(pcd_object.points))
+                object_points = torch.tensor(np.array(pcd_object.points))
+                
             concat_part = int(np.ceil(self.points_per_object / object_points.shape[0]) )
             object_points = object_points.repeat(concat_part, 1)
             object_points = object_points[torch.randperm(object_points.shape[0])][:self.points_per_object]
@@ -75,4 +75,4 @@ class NuscenesObjectsSet(Dataset):
         if self.relative_angles:
             center[0] -= yaw
         
-        return [object_points, center, torch.from_numpy(size), orientation, num_points, ring_indexes, class_name]
+        return [object_points, center, torch.from_numpy(size), yaw, num_points, ring_indexes, class_name]

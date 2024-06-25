@@ -7,7 +7,7 @@ from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 import numpy as np
 import torch
 import yaml
-from datasets.dataset_nuscenes import dataloaders
+from datasets.dataset_mapper import dataloaders
 
 
 from models.models_dit3d import DiT3D_Diffuser
@@ -75,7 +75,7 @@ def main(config, weights, checkpoint, test):
                         devices=cfg['train']['n_gpus'],
                         logger=tb_logger,
                         log_every_n_steps=100,
-                        resume_from_checkpoint=checkpoint,
+                        # resume_from_checkpoint=checkpoint,
                         max_epochs= cfg['train']['max_epoch'],
                         callbacks=[lr_monitor, checkpoint_saver],
                         check_val_every_n_epoch=10,
