@@ -1,13 +1,13 @@
 experiment:
-    id: shapenet_s_4_1
+    id: bikes_xl_2_from_2d_1
 
 ##Data
 data:
-    data_dir: '/home/ekirby/scania/ekirby/datasets/motorcycles_from_shapenet/03790512'
+    data_dir: '/home/ekirby/scania/ekirby/datasets/bikes_from_nuscenes/bikes_from_nuscenes_train_val.json'
     resolution: 0.05
-    dataloader: 'shapenet'
+    dataloader: 'nuscenes'
     coordinates: 'cylindrical'
-    points_per_object: 2048
+    points_per_object: 100
     align_objects: False
 
 ##Training
@@ -21,7 +21,7 @@ train:
     batch_size: 16
     decay_lr: 1.0e-4
     class_conditional: False
-    ema: False
+    ema: True
 
 diff:
     beta_start: 3.5e-5
@@ -40,5 +40,6 @@ model:
     num_conditions: 8
     cyclic_conditions: 2
     relative_angles: False
-    config: DiT-S/4
-    attention: window
+    config: DiT-XL/2
+    attention: normal
+    pretrained: True
