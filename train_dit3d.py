@@ -61,9 +61,10 @@ def main(config, weights, checkpoint, test):
     #Add callbacks
     lr_monitor = LearningRateMonitor(logging_interval='step')
     checkpoint_saver = ModelCheckpoint(
-                                dirpath='checkpoints/',
+                                dirpath='checkpoints/'+cfg['experiment']['id'],
                                 filename=cfg['experiment']['id']+'_{epoch:02d}',
-                                save_last=True
+                                save_last=True,
+                                save_top_k=-1
                             )
 
     tb_logger = pl_loggers.TensorBoardLogger('experiments/'+cfg['experiment']['id'],
@@ -106,7 +107,7 @@ def main(config, weights, checkpoint, test):
         trainer.test(model, data)
     else:
         print('TRAINING MODE')
-        trainer.fit(model, data)
+        trainer.fit(model, data, ckpt_path=checkpoint)
 
 if __name__ == "__main__":
     main()
