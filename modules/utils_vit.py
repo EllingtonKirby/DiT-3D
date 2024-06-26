@@ -56,7 +56,7 @@ def window_unpartition(windows, window_size, pad_xyz, xyz):
     """
     Xp, Yp, Zp = pad_xyz
     X, Y, Z = xyz
-    B = windows.shape[0] // (Xp * Yp * Zp // window_size // window_size // window_size)
+    B = max((windows.shape[0] // (Xp * Yp * Zp // window_size // window_size // window_size)), 1)
     x = windows.view(B, Xp // window_size, Yp // window_size, Zp // window_size, window_size, window_size, window_size, -1)
     x = x.permute(0, 1, 4, 2, 5, 3, 6, 7).contiguous().view(B, Xp, Yp, Zp, -1)
 
