@@ -10,7 +10,7 @@ import click
 from models.models_dit3d import DiT3D_Diffuser
 from modules.metrics import ChamferDistance
 from modules.three_d_helpers import build_two_point_clouds
-from datasets import dataset_nuscenes
+from datasets import dataset_mapper
 
 def find_eligible_objects(dataloader, num_to_find=1, object_class='vehicle.car', min_points=None):
     targets = []
@@ -46,6 +46,15 @@ def clip_points(points, min_bounds, max_bounds):
     return clipped_points
 
 def p_sample_loop(model: DiT3D_Diffuser, x_t, x_cond, x_uncond, x_class, batch_indices, viz_path=None):
+    model.dpm_scheduler = DPMSolverMultistepScheduler(
+        num_train_timesteps=model.t_steps,
+        beta_start=model.hparams['diff']['beta_start'],
+        beta_end=model.hparams['diff']['beta_end'],
+        beta_schedule='linear',
+        algorithm_type='sde-dpmsolver++',
+        solver_order=2,
+    )
+    model.dpm_scheduler.set_timesteps(model.s_steps)
     model.scheduler_to_cuda()
     generate_viz = viz_path != None
     if generate_viz:
@@ -70,17 +79,6 @@ def p_sample_loop(model: DiT3D_Diffuser, x_t, x_cond, x_uncond, x_class, batch_i
         
 def denoise_object_from_pcd(model: DiT3D_Diffuser, x_object, x_center, x_size, x_orientation, x_class, num_diff_samples, viz_path=None):
     torch.backends.cudnn.deterministic = True
-
-    model.dpm_scheduler = DPMSolverMultistepScheduler(
-        num_train_timesteps=model.t_steps,
-        beta_start=model.hparams['diff']['beta_start'],
-        beta_end=model.hparams['diff']['beta_end'],
-        beta_schedule='linear',
-        algorithm_type='sde-dpmsolver++',
-        solver_order=2,
-    )
-    model.dpm_scheduler.set_timesteps(model.s_steps)
-    model.scheduler_to_cuda()
 
     x_init = x_object.clone().cuda()    
     batch_indices = torch.zeros(x_init.shape[0]).long().cuda()
@@ -116,7 +114,7 @@ def denoise_object_from_pcd(model: DiT3D_Diffuser, x_object, x_center, x_size, x
     return x_gen_eval.cpu().detach().numpy(), x_object.cpu().detach().squeeze(0).permute(1,0).numpy()
 
 def extract_object_info(object_info):
-    x_object = object_info['pcd_object'].squeeze(1)
+    x_object = object_info['pcd_object']
     x_center = object_info['center']
     x_size = object_info['size']
     x_orientation = object_info['orientation']
@@ -139,8 +137,9 @@ def find_pcd_and_interpolate_condition(dir_path, conditions, model, objects, do_
     for object_info in objects:
         print(f'Generating using car info {object_info["index"]}')
         pcd, center_cyl, size, yaw, x_class = extract_object_info(object_info)
+        np.savetxt(f'{dir_path}/object_{object_info["index"]}_orig.txt', pcd)
         def do_gen(condition, index, center_cyl=center_cyl, size=size, yaw=yaw, pcd=pcd):
-                x_gen, x_orig = denoise_object_from_pcd(
+                x_gen, _ = denoise_object_from_pcd(
                     model=model,
                     x_object=pcd,
                     x_center=center_cyl,
@@ -151,7 +150,6 @@ def find_pcd_and_interpolate_condition(dir_path, conditions, model, objects, do_
                     viz_path=f'{dir_path}' if do_viz else None
                 )
                 np.savetxt(f'{dir_path}/object_{object_info["index"]}_{condition}_interp_{index}.txt', x_gen)
-                np.savetxt(f'{dir_path}/object_{object_info["index"]}_orig.txt', x_orig)
 
         for condition in conditions:
             if condition == 'yaw':
@@ -245,17 +243,14 @@ def main(config, weights, output_path, name, task, class_name, split, min_points
     dir_path = f'{output_path}/{name}'
     os.makedirs(dir_path, exist_ok=True)
     cfg = yaml.safe_load(open(config))
-    cfg['diff']['s_steps'] = 1000
+    cfg['diff']['s_steps'] = 50
     cfg['diff']['uncond_w'] = 6.
     cfg['train']['batch_size'] = 1
     model = DiT3D_Diffuser.load_from_checkpoint(weights, hparams=cfg).cuda()
     model.eval()
 
-    dataloader_maps = [dataset_nuscenes.dataloaders]
-    for map in dataloader_maps:
-        if cfg['data']['dataloader'] in map:
-           module: LightningDataModule = map[cfg['data']['dataloader']](cfg)
-           break
+    
+    module: LightningDataModule = dataset_mapper.dataloaders[cfg['data']['dataloader']](cfg)
 
     dataloader = module.train_dataloader() if split == 'train' else module.val_dataloader()
     objects = find_eligible_objects(dataloader, num_to_find=examples_to_generate, object_class=class_name, min_points=min_points)
