@@ -464,10 +464,10 @@ def DiT_XL_2(pretrained=False, **kwargs):
 
     model = DiT(depth=28, hidden_size=1152, patch_size=2, num_heads=16, **kwargs)
     if pretrained:
-        checkpoint = torch.load('/path/to/DiT2D_pretrained_weights/DiT-XL-2-512x512.pt', map_location='cpu')
+        checkpoint = torch.load('/home/ekirby/workspace/DiT-3D/checkpoints/DiT-XL-2-512x512.pt', map_location='cpu')
         if "ema" in checkpoint:  # supports ema checkpoints 
             checkpoint = checkpoint["ema"]
-        checkpoint_blocks = {k: checkpoint[k] for k in checkpoint if not k.startswith('blocks')}
+        checkpoint_blocks = {k: checkpoint[k] for k in checkpoint if k.startswith('blocks')}
         # load pre-trained blocks from 2d DiT
         msg = model.load_state_dict(checkpoint_blocks, strict=False)
 
@@ -530,7 +530,7 @@ def DiT_S_4(pretrained=False, **kwargs):
 
     model = DiT(depth=12, hidden_size=384, patch_size=4, num_heads=6, **kwargs)
     if pretrained:
-        checkpoint = torch.load('/path/to/DiT2D_pretrained_weights/DiT-S-4.pth', map_location='cpu')
+        checkpoint = torch.load('/home/ekirby/workspace/DiT-3D/checkpoints/shapenet_s_4_1_epoch=9999.ckpt', map_location='cpu')
         if "ema" in checkpoint:  # supports ema checkpoints 
             checkpoint = checkpoint["ema"]
         checkpoint_blocks = {k: checkpoint[k] for k in checkpoint if k.startswith('blocks')}
