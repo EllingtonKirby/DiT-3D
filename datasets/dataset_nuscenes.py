@@ -113,7 +113,8 @@ class NuscenesObjectCollator:
             'batch_indices': batch_indices,
             'num_points': num_points_tensor,
             'ring_indexes': torch.vstack(batch[5]),
-            'class': torch.ones((pcd_object.shape[0], 1)).long()
+            'class': torch.ones((pcd_object.shape[0], 1)).long(),
+            'padding_mask': torch.from_numpy(np.stack(batch[7]))
         }
 
 dataloaders = {
