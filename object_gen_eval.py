@@ -137,7 +137,7 @@ def find_pcd_and_interpolate_condition(dir_path, conditions, model, objects, do_
     for object_info in objects:
         print(f'Generating using car info {object_info["index"]}')
         pcd, center_cyl, size, yaw, x_class = extract_object_info(object_info)
-        np.savetxt(f'{dir_path}/object_{object_info["index"]}_orig.txt', pcd)
+        np.savetxt(f'{dir_path}/object_{object_info["index"]}_orig.txt', pcd.cpu().detach().squeeze(0).permute(1,0).numpy())
         def do_gen(condition, index, center_cyl=center_cyl, size=size, yaw=yaw, pcd=pcd):
                 x_gen, _ = denoise_object_from_pcd(
                     model=model,
