@@ -1,5 +1,3 @@
-from ctypes import py_object
-from decimal import localcontext
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -16,6 +14,8 @@ from models.dit3d import DiT3D_models
 from models.dit3d_window_attn import DiT3D_models_WindAttn
 from modules.metrics import ChamferDistance, PrecisionRecall
 from modules.three_d_helpers import build_two_point_clouds
+from copy import deepcopy
+from modules.ema_utls import update_ema
 
 
 class DiT3D_Diffuser(LightningModule):
@@ -76,19 +76,29 @@ class DiT3D_Diffuser(LightningModule):
         self.dpm_scheduler.set_timesteps(self.s_steps)
         self.scheduler_to_cuda()
 
+        pretrained = self.hparams['model']['pretrained']
         if self.hparams['model']['attention'] == 'window':
             self.model = DiT3D_models_WindAttn[self.hparams['model']['config']](
+                pretrained=pretrained,
                 window_size=4, 
                 window_block_indexes=(0,3,6,9)
             ).cuda()
         else:
-            self.model = DiT3D_models[self.hparams['model']['config']]().cuda()
+            self.model = DiT3D_models[self.hparams['model']['config']](pretrained=pretrained).cuda()
 
         self.chamfer_distance = ChamferDistance()
-        self.precision_recall = PrecisionRecall(self.hparams['data']['resolution'],2*self.hparams['data']['resolution'],100)
 
         self.w_uncond = self.hparams['train']['uncond_w']
         self.visualize = self.hparams['diff']['visualize']
+
+        if self.hparams['train']['ema']:
+            self.ema = deepcopy(self.model).cuda()
+            for p in self.ema.parameters():
+                p.requires_grad = False
+            update_ema(self.ema, self.model, decay=0)
+            self.ema.eval()
+        else:
+            self.ema = None
 
     def scheduler_to_cuda(self):
         self.dpm_scheduler.timesteps = self.dpm_scheduler.timesteps.cuda()
@@ -135,8 +145,8 @@ class DiT3D_Diffuser(LightningModule):
             
         return x_t
 
-    def p_losses(self, y, noise):
-        return F.mse_loss(y, noise)
+    def p_losses(self, y, noise, mask):
+        return F.mse_loss(y[:, :, mask], noise[:, :, mask])
 
     def forward(self, x, t, y, c):
         out = self.model(x, t, y, c)
@@ -145,7 +155,7 @@ class DiT3D_Diffuser(LightningModule):
     def training_step(self, batch:dict, batch_idx):
         # initial random noise
         x_object = batch['pcd_object'].cuda()
-        noise = torch.randn(x_object.shape, device=self.device)
+        noise = torch.randn(x_object.shape, device=self.device) * batch['padding_mask'][:, None, :]
         
         # sample step t
         t = torch.randint(0, self.t_steps, size=(noise.shape[0],)).cuda()
@@ -173,7 +183,7 @@ class DiT3D_Diffuser(LightningModule):
             x_cond = torch.hstack((x_center, x_size, x_orientation))
 
         denoise_t = self.forward(t_sample, t, x_class, x_cond)
-        loss_mse = self.p_losses(denoise_t, noise)
+        loss_mse = self.p_losses(denoise_t, noise, batch['padding_mask'].int())
         loss_mean = (denoise_t.mean())**2
         loss_std = (denoise_t.std() - 1.)**2
         loss = loss_mse + self.hparams['diff']['reg_weight'] * (loss_mean + loss_std)
@@ -187,6 +197,10 @@ class DiT3D_Diffuser(LightningModule):
         self.log('train/std', std_noise.std())
 
         return loss
+    
+    def on_after_backward(self) -> None:
+        if self.ema != None:
+            update_ema(self.ema, self.model)
 
     def validation_step(self, batch:dict, batch_idx):
         self.dpm_scheduler = DPMSolverMultistepScheduler(
@@ -215,21 +229,22 @@ class DiT3D_Diffuser(LightningModule):
             else:
                 x_cond = torch.hstack((x_center, x_size, x_orientation))
             x_uncond = torch.zeros_like(x_cond)
-
-            x_t = torch.randn(x_object.shape, device=self.device)
+            
+            padding_mask = batch['padding_mask']
+            x_t = torch.randn(x_object.shape, device=self.device) * padding_mask[:, None, :]
             x_gen_eval = self.p_sample_loop(x_t, batch['class'], x_cond, x_uncond).permute(0,2,1).squeeze(0)
             x_object = x_object.permute(0,2,1).squeeze(0)
 
             cd_mean_as_pct_of_box = []
             
             for pcd_index in range(batch['num_points'].shape[0]):
-                object_pcd = x_object[pcd_index].squeeze(0)
-                genrtd_pcd = x_gen_eval[pcd_index].squeeze(0)
+                mask = padding_mask[pcd_index].int() == True
+                object_pcd = x_object[pcd_index].squeeze(0)[mask]
+                genrtd_pcd = x_gen_eval[pcd_index].squeeze(0)[mask]
 
                 pcd_pred, pcd_gt = build_two_point_clouds(genrtd_pcd=genrtd_pcd, object_pcd=object_pcd)
 
                 self.chamfer_distance.update(pcd_gt, pcd_pred)
-                self.precision_recall.update(pcd_gt, pcd_pred)
 
                 last_cd = self.chamfer_distance.last_cd()
                 box = batch['size'][pcd_index].cpu()
