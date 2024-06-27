@@ -11,7 +11,7 @@ from modules.three_d_helpers import cartesian_to_cylindrical
 import open3d as o3d
 
 class NuscenesObjectsSet(Dataset):
-    def __init__(self, data_dir, split, points_per_object=None, volume_expansion=1., recenter=True, align_objects=False, relative_angles=False):
+    def __init__(self, data_dir, split, points_per_object=None, volume_expansion=1., recenter=True, align_objects=False, relative_angles=False, stacking_type='duplicate'):
         super().__init__()
         with open(data_dir, 'r') as f:
             self.data_index = json.load(f)[split]
@@ -22,6 +22,7 @@ class NuscenesObjectsSet(Dataset):
         self.do_recenter = recenter
         self.align_objects = align_objects
         self.relative_angles = relative_angles
+        self.stacking_type = stacking_type
 
     def __len__(self):
         return self.nr_data
@@ -49,10 +50,19 @@ class NuscenesObjectsSet(Dataset):
                 pcd_object.points = o3d.utility.Vector3dVector(object_points)
                 pcd_object = pcd_object.farthest_point_down_sample(self.points_per_object)
                 object_points = torch.tensor(np.array(pcd_object.points))
+                padding_mask = torch.ones((object_points.shape[0]))
             else:
-                padded_points = torch.zeros((self.points_per_object, object_points.shape[1]))
-                padded_points[:object_points.shape[0]] = object_points
-                object_points = padded_points
+                if self.stacking_type == 'pad':
+                    padded_points = torch.zeros((self.points_per_object, object_points.shape[1]))
+                    padded_points[:object_points.shape[0]] = object_points
+                    object_points = padded_points
+                    padding_mask = torch.zeros((object_points.shape[0]))
+                    padding_mask[:num_points] = 1
+                elif self.stacking_type == 'duplicate':
+                    concat_part = int(np.ceil(self.points_per_object / object_points.shape[0]) )
+                    object_points = object_points.repeat(concat_part, 1)
+                    object_points = object_points[torch.randperm(object_points.shape[0])][:self.points_per_object]
+                    padding_mask = torch.ones((object_points.shape[0]))
         
         ring_indexes = torch.zeros_like(object_points)
         if self.do_recenter:
@@ -73,8 +83,5 @@ class NuscenesObjectsSet(Dataset):
 
         if self.relative_angles:
             center[0] -= yaw
-        
-        padding_mask = torch.zeros((object_points.shape[0]))
-        padding_mask[:num_points] = 1
         
         return [object_points, center, torch.from_numpy(size), yaw, num_points, ring_indexes, class_name, padding_mask]

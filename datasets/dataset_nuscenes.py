@@ -32,7 +32,8 @@ class NuscenesObjectsDataModule(LightningDataModule):
                 split='train', 
                 points_per_object=self.cfg['data']['points_per_object'],
                 align_objects=self.cfg['data']['align_objects'],
-                relative_angles=self.cfg['model']['relative_angles']
+                relative_angles=self.cfg['model']['relative_angles'],
+                stacking_type=self.cfg['data']['stacking_type']
             )
         loader = DataLoader(data_set, batch_size=self.cfg['train']['batch_size'], shuffle=True,
                             num_workers=self.cfg['train']['num_workers'], collate_fn=collate)
@@ -46,7 +47,8 @@ class NuscenesObjectsDataModule(LightningDataModule):
                 split='val',
                 points_per_object=self.cfg['data']['points_per_object'],
                 align_objects=self.cfg['data']['align_objects'],
-                relative_angles=self.cfg['model']['relative_angles']
+                relative_angles=self.cfg['model']['relative_angles'],
+                stacking_type=self.cfg['data']['stacking_type']
             )
         loader = DataLoader(data_set, batch_size=self.cfg['train']['batch_size'],
                             num_workers=self.cfg['train']['num_workers'], collate_fn=collate)
@@ -60,7 +62,8 @@ class NuscenesObjectsDataModule(LightningDataModule):
                 split='val', 
                 points_per_object=self.cfg['data']['points_per_object'],
                 align_objects=self.cfg['data']['align_objects'],
-                relative_angles=self.cfg['model']['relative_angles']
+                relative_angles=self.cfg['model']['relative_angles'],
+                stacking_type=self.cfg['data']['stacking_type']
             )
         loader = DataLoader(data_set, batch_size=self.cfg['train']['batch_size'],
                              num_workers=self.cfg['train']['num_workers'], collate_fn=collate)

@@ -79,7 +79,8 @@ class ShapeNetObjectCollator:
             'orientation': torch.from_numpy(np.vstack(batch[3])).float(),
             'batch_indices': batch_indices,
             'num_points': num_points_tensor,
-            'class': torch.ones((pcd_object.shape[0], 1)).long()
+            'class': torch.ones((pcd_object.shape[0], 1)).long(),
+            'padding_mask': torch.ones((pcd_object.shape[0], pcd_object.shape[2]))
         }
 
 dataloaders = {

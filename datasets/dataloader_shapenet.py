@@ -32,8 +32,6 @@ class ShapeNetObjectsSet(Dataset):
         ])
         rotated_point_cloud = object_points.dot(rotation_matrix_pitch.T)
         size = np.zeros(3)
-        # for i in range(3):
-        #     size[i] = np.max(object_points[i]) - np.min(object_points[i])
         center = np.zeros(3)
         orientation = np.zeros(1)
         ring_indexes = np.zeros_like(object_points)
