@@ -1,5 +1,5 @@
 experiment:
-    id: shapenet_s_4_ema_1
+    id: shapenet_s4_ema_attn_relative_1
 
 ##Data
 data:
@@ -8,7 +8,8 @@ data:
     dataloader: 'shapenet'
     coordinates: 'cylindrical'
     points_per_object: 2048
-    align_objects: False
+    align_objects: True
+    stacking_type: pad
 
 ##Training
 train:
@@ -35,10 +36,10 @@ diff:
 
 ##Network
 model:
-    out_dim: 96
     embeddings: 'cyclical'
-    num_conditions: 8
-    cyclic_conditions: 2
-    relative_angles: False
+    num_conditions: 7
+    cyclic_conditions: 1
+    relative_angles: True
     config: DiT-S/4
-    attention: window
+    pretrained: False
+    attention: normal

@@ -9,6 +9,7 @@ data:
     coordinates: 'cylindrical'
     points_per_object: 100
     align_objects: False
+    stacking_type: pad
 
 ##Training
 train:
@@ -41,5 +42,5 @@ model:
     cyclic_conditions: 2
     relative_angles: False
     config: DiT-S/4
-    attention: window
+    attention: normal
     pretrained: False

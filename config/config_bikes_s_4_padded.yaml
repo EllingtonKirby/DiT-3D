@@ -1,5 +1,5 @@
 experiment:
-    id: bikes_s_4_padded_1
+    id: bikes_s_4_padded_2
 
 ##Data
 data:
@@ -8,7 +8,8 @@ data:
     dataloader: 'nuscenes'
     coordinates: 'cylindrical'
     points_per_object: 100
-    align_objects: False
+    align_objects: True
+    stacking_type: pad
 
 ##Training
 train:
@@ -37,9 +38,9 @@ diff:
 model:
     out_dim: 96
     embeddings: 'cyclical'
-    num_conditions: 8
-    cyclic_conditions: 2
-    relative_angles: False
+    num_conditions: 7
+    cyclic_conditions: 1
+    relative_angles: True
     config: DiT-S/4
     attention: normal
     pretrained: False

@@ -1,5 +1,5 @@
 experiment:
-    id: bikes_s_4_pretrained_2
+    id: bikes_s_4_flash_1
 
 ##Data
 data:
@@ -22,7 +22,7 @@ train:
     batch_size: 16
     decay_lr: 1.0e-4
     class_conditional: False
-    ema: False
+    ema: True
 
 diff:
     beta_start: 3.5e-5
@@ -42,5 +42,5 @@ model:
     cyclic_conditions: 1
     relative_angles: True
     config: DiT-S/4
-    attention: normal
-    pretrained: True
+    attention: flash
+    pretrained: False
