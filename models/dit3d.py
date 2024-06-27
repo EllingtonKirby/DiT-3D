@@ -530,7 +530,7 @@ def DiT_S_4(pretrained=False, **kwargs):
 
     model = DiT(depth=12, hidden_size=384, patch_size=4, num_heads=6, **kwargs)
     if pretrained:
-        checkpoint = torch.load('/home/ekirby/workspace/DiT-3D/checkpoints/shapenet_s_4_1_epoch=9999.ckpt', map_location='cpu')
+        checkpoint = torch.load('/home/ekirby/workspace/DiT-3D/checkpoints/shapenet_s_4_ema_1/shapenet_s_4_ema_1_epoch=9999.ckpt', map_location='cpu')
         if "ema" in checkpoint:  # supports ema checkpoints 
             checkpoint = checkpoint["ema"]
         checkpoint_blocks = {k: checkpoint[k] for k in checkpoint if k.startswith('blocks')}

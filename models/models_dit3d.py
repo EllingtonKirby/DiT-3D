@@ -12,6 +12,8 @@ from random import shuffle
 from modules.scheduling import beta_func
 from models.dit3d import DiT3D_models
 from models.dit3d_window_attn import DiT3D_models_WindAttn
+from models.dit3d_flash_attn import DiT3D_models_FlashAttn
+from models.dit3d_cross_attn import DiT3D_models_CrossAttn
 from modules.metrics import ChamferDistance, PrecisionRecall
 from modules.three_d_helpers import build_two_point_clouds
 from copy import deepcopy
@@ -83,6 +85,10 @@ class DiT3D_Diffuser(LightningModule):
                 window_size=4, 
                 window_block_indexes=(0,3,6,9)
             ).cuda()
+        elif self.hparams['model']['attention'] == 'flash':
+            self.model = DiT3D_models_FlashAttn[self.hparams['model']['config']](pretrained=pretrained).cuda()
+        elif self.hparams['model']['attention'] == 'cross':
+            self.model = DiT3D_models_CrossAttn[self.hparams['model']['config']](pretrained=pretrained).cuda()
         else:
             self.model = DiT3D_models[self.hparams['model']['config']](pretrained=pretrained).cuda()
 
@@ -132,12 +138,12 @@ class DiT3D_Diffuser(LightningModule):
         pcd.colors = o3d.utility.Vector3dVector(colors)
         return pcd
 
-    def p_sample_loop(self, x_t, x_class, x_cond, x_uncond):
+    def p_sample_loop(self, x_t, x_class, x_cond, x_uncond, mask):
         self.scheduler_to_cuda()
 
         for t in tqdm(range(len(self.dpm_scheduler.timesteps))):
             t = torch.ones(x_t.shape[0]).cuda().long() * self.dpm_scheduler.timesteps[t].cuda()
-          
+            x_t *= mask
             noise_t = self.classfree_forward(x_t, t, x_class, x_cond, x_uncond)
             input_noise = x_t
 
@@ -145,8 +151,8 @@ class DiT3D_Diffuser(LightningModule):
             
         return x_t
 
-    def p_losses(self, y, noise, mask):
-        return F.mse_loss(y[:, :, mask], noise[:, :, mask])
+    def p_losses(self, y, noise):
+        return F.mse_loss(y, noise)
 
     def forward(self, x, t, y, c):
         out = self.model(x, t, y, c)
@@ -155,12 +161,13 @@ class DiT3D_Diffuser(LightningModule):
     def training_step(self, batch:dict, batch_idx):
         # initial random noise
         x_object = batch['pcd_object'].cuda()
-        noise = torch.randn(x_object.shape, device=self.device) * batch['padding_mask'][:, None, :]
+        padding_mask = batch['padding_mask'][:, None, :]
+        noise = torch.randn(x_object.shape, device=self.device) * padding_mask
         
         # sample step t
         t = torch.randint(0, self.t_steps, size=(noise.shape[0],)).cuda()
         # sample q at step t
-        t_sample = self.q_sample(x_object, t, noise).float()
+        t_sample = self.q_sample(x_object, t, noise).float() * padding_mask
 
         # for classifier-free guidance switch between conditional and unconditional training
         if torch.rand(1) > self.hparams['train']['uncond_prob'] or x_object.shape[0] == 1:
@@ -182,8 +189,8 @@ class DiT3D_Diffuser(LightningModule):
         else:
             x_cond = torch.hstack((x_center, x_size, x_orientation))
 
-        denoise_t = self.forward(t_sample, t, x_class, x_cond)
-        loss_mse = self.p_losses(denoise_t, noise, batch['padding_mask'].int())
+        denoise_t = self.forward(t_sample, t, x_class, x_cond) * padding_mask
+        loss_mse = self.p_losses(denoise_t, noise)
         loss_mean = (denoise_t.mean())**2
         loss_std = (denoise_t.std() - 1.)**2
         loss = loss_mse + self.hparams['diff']['reg_weight'] * (loss_mean + loss_std)
@@ -231,8 +238,8 @@ class DiT3D_Diffuser(LightningModule):
             x_uncond = torch.zeros_like(x_cond)
             
             padding_mask = batch['padding_mask']
-            x_t = torch.randn(x_object.shape, device=self.device) * padding_mask[:, None, :]
-            x_gen_eval = self.p_sample_loop(x_t, batch['class'], x_cond, x_uncond).permute(0,2,1).squeeze(0)
+            x_t = torch.randn(x_object.shape, device=self.device)
+            x_gen_eval = self.p_sample_loop(x_t, batch['class'], x_cond, x_uncond, padding_mask[:, None, :]).permute(0,2,1).squeeze(0)
             x_object = x_object.permute(0,2,1).squeeze(0)
 
             cd_mean_as_pct_of_box = []
