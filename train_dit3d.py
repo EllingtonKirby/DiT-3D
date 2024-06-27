@@ -64,7 +64,6 @@ def main(config, weights, checkpoint, test):
                                 dirpath='checkpoints/'+cfg['experiment']['id'],
                                 filename=cfg['experiment']['id']+'_{epoch:02d}',
                                 save_last=True,
-                                save_top_k=-1
                             )
 
     tb_logger = pl_loggers.TensorBoardLogger('experiments/'+cfg['experiment']['id'],
@@ -76,7 +75,6 @@ def main(config, weights, checkpoint, test):
                         devices=cfg['train']['n_gpus'],
                         logger=tb_logger,
                         log_every_n_steps=100,
-                        # resume_from_checkpoint=checkpoint,
                         max_epochs= cfg['train']['max_epoch'],
                         callbacks=[lr_monitor, checkpoint_saver],
                         check_val_every_n_epoch=10,
@@ -91,7 +89,6 @@ def main(config, weights, checkpoint, test):
                         devices=cfg['train']['n_gpus'],
                         logger=tb_logger,
                         log_every_n_steps=100,
-                        # resume_from_checkpoint=checkpoint,
                         max_epochs= cfg['train']['max_epoch'],
                         callbacks=[lr_monitor, checkpoint_saver],
                         check_val_every_n_epoch=10,
