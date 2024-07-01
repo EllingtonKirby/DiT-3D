@@ -8,7 +8,7 @@ data:
     dataloader: 'nuscenes'
     coordinates: 'cylindrical'
     points_per_object: 100
-    align_objects: False
+    align_objects: True
     stacking_type: pad
 
 ##Training
@@ -42,5 +42,5 @@ model:
     cyclic_conditions: 1
     relative_angles: True
     config: DiT-S/4
-    attention: normal
+    attention: flash
     pretrained: True
