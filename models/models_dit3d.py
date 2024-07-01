@@ -14,7 +14,8 @@ from models.dit3d import DiT3D_models
 from models.dit3d_window_attn import DiT3D_models_WindAttn
 from models.dit3d_flash_attn import DiT3D_models_FlashAttn
 from models.dit3d_cross_attn import DiT3D_models_CrossAttn
-from modules.metrics import ChamferDistance, PrecisionRecall
+from models.dit3d_cross_attn_voxelized import DiT3D_models_CrossAttn_Voxel
+from modules.metrics import ChamferDistance
 from modules.three_d_helpers import build_two_point_clouds
 from copy import deepcopy
 from modules.ema_utls import update_ema
@@ -84,13 +85,16 @@ class DiT3D_Diffuser(LightningModule):
                 pretrained=pretrained,
                 window_size=4, 
                 window_block_indexes=(0,3,6,9)
-            ).cuda()
+            )
         elif self.hparams['model']['attention'] == 'flash':
-            self.model = DiT3D_models_FlashAttn[self.hparams['model']['config']](pretrained=pretrained).cuda()
+            self.model = DiT3D_models_FlashAttn[self.hparams['model']['config']](pretrained=pretrained)
         elif self.hparams['model']['attention'] == 'cross':
-            self.model = DiT3D_models_CrossAttn[self.hparams['model']['config']](pretrained=pretrained).cuda()
+            if self.hparams['model']['embeddings'] == 'point':
+                self.model = DiT3D_models_CrossAttn[self.hparams['model']['config']](pretrained=pretrained)
+            elif self.hparams['model']['embeddings'] == 'voxel':
+                self.model = DiT3D_models_CrossAttn_Voxel[self.hparams['model']['config']](pretrained=pretrained)
         else:
-            self.model = DiT3D_models[self.hparams['model']['config']](pretrained=pretrained).cuda()
+            self.model = DiT3D_models[self.hparams['model']['config']](pretrained=pretrained)
 
         self.chamfer_distance = ChamferDistance()
 
@@ -98,7 +102,7 @@ class DiT3D_Diffuser(LightningModule):
         self.visualize = self.hparams['diff']['visualize']
 
         if self.hparams['train']['ema']:
-            self.ema = deepcopy(self.model).cuda()
+            self.ema = deepcopy(self.model)
             for p in self.ema.parameters():
                 p.requires_grad = False
             update_ema(self.ema, self.model, decay=0)
@@ -165,9 +169,10 @@ class DiT3D_Diffuser(LightningModule):
         noise = torch.randn(x_object.shape, device=self.device) * padding_mask
         
         # sample step t
-        t = torch.randint(0, self.t_steps, size=(noise.shape[0],)).cuda()
+        t = torch.randint(0, self.t_steps, size=(noise.shape[0],))
         # sample q at step t
         t_sample = self.q_sample(x_object, t, noise).float() * padding_mask
+        t = t.cuda()
 
         # for classifier-free guidance switch between conditional and unconditional training
         if torch.rand(1) > self.hparams['train']['uncond_prob'] or x_object.shape[0] == 1:
