@@ -31,6 +31,8 @@ class ShapeNetObjectsDataModule(LightningDataModule):
                 data_dir=self.cfg['data']['data_dir'], 
                 split='train',
                 points_per_object=self.cfg['data']['points_per_object'],
+                conditions_data_dir=self.cfg['data']['conditions_dir'],
+                relative_angles=self.cfg['model']['relative_angles'],
             )
         loader = DataLoader(data_set, batch_size=self.cfg['train']['batch_size'], shuffle=True,
                             num_workers=self.cfg['train']['num_workers'], collate_fn=collate)
@@ -43,6 +45,8 @@ class ShapeNetObjectsDataModule(LightningDataModule):
                 data_dir=self.cfg['data']['data_dir'], 
                 split='val',
                 points_per_object=self.cfg['data']['points_per_object'],
+                conditions_data_dir=self.cfg['data']['conditions_dir'],
+                relative_angles=self.cfg['model']['relative_angles'],
             )
         loader = DataLoader(data_set, batch_size=self.cfg['train']['batch_size'],
                             num_workers=self.cfg['train']['num_workers'], collate_fn=collate)
@@ -55,6 +59,8 @@ class ShapeNetObjectsDataModule(LightningDataModule):
                 data_dir=self.cfg['data']['data_dir'], 
                 split='val',
                 points_per_object=self.cfg['data']['points_per_object'],
+                conditions_data_dir=self.cfg['data']['conditions_dir'],
+                relative_angles=self.cfg['model']['relative_angles'],
             )
         loader = DataLoader(data_set, batch_size=self.cfg['train']['batch_size'],
                              num_workers=self.cfg['train']['num_workers'], collate_fn=collate)
