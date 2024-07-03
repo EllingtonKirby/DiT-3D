@@ -1,5 +1,5 @@
 experiment:
-    id: bikes_s_4_cross_voxel_1
+    id: bikes_s_4_cross_voxel_pad_1
 
 ##Data
 data:
@@ -16,7 +16,7 @@ train:
     uncond_prob: 0.1
     uncond_w: 6.
     n_gpus: 4
-    num_workers: 16
+    num_workers: 32
     max_epoch: 2000
     lr: 0.0001
     batch_size: 16

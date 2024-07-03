@@ -37,7 +37,7 @@ diff:
 ##Network
 model:
     out_dim: 96
-    embeddings: 'cyclical'
+    embeddings: 'point'
     num_conditions: 7
     cyclic_conditions: 1
     relative_angles: True
