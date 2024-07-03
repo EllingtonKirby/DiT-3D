@@ -234,7 +234,8 @@ class DiT(nn.Module):
         mlp_ratio=4.0,
         class_dropout_prob=0.1,
         num_classes=1,
-        learn_sigma=False
+        learn_sigma=False,
+        num_cyclic_conditions=2,
     ):
         super().__init__()
         self.learn_sigma = learn_sigma
@@ -251,7 +252,7 @@ class DiT(nn.Module):
         
         self.t_embedder = TimestepEmbedder(hidden_size)
         self.y_embedder = LabelEmbedder(num_classes, hidden_size, class_dropout_prob)
-        self.c_embedder = ConditionEmbedder(hidden_size)
+        self.c_embedder = ConditionEmbedder(hidden_size, num_cyclic_conditions=num_cyclic_conditions)
 
         # Will use fixed sin-cos embedding:
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, hidden_size), requires_grad=False)

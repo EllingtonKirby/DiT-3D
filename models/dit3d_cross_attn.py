@@ -397,7 +397,8 @@ class DiT(nn.Module):
             mlp_ratio=4.0,
             learn_sigma=False,
             num_classes=1,
-            compile_components=False
+            compile_components=False,
+            num_cyclic_conditions=2,
     ):
         super().__init__()
         self.learn_sigma = learn_sigma
@@ -413,7 +414,7 @@ class DiT(nn.Module):
 
         self.final_layer = FinalLayer(hidden_size, self.out_channels)
 
-        self.c_embedder = ConditionEmbedder(hidden_size)
+        self.c_embedder = ConditionEmbedder(hidden_size, num_cyclic_conditions=num_cyclic_conditions)
 
         self.secondary_device = torch.device("cpu")
 

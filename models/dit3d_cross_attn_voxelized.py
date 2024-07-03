@@ -365,6 +365,7 @@ class DiT(nn.Module):
             learn_sigma=False,
             num_classes=1,
             compile_components=False,
+            num_cyclic_conditions=1,
     ):
         super().__init__()
         self.learn_sigma = learn_sigma
@@ -384,7 +385,7 @@ class DiT(nn.Module):
         self.y_embedder = LabelEmbedder(num_classes, hidden_size, .1)
 
 
-        self.c_embedder = ConditionEmbedder(hidden_size)
+        self.c_embedder = ConditionEmbedder(hidden_size, num_cyclic_conditions=num_cyclic_conditions)
 
         self.secondary_device = torch.device("cpu")
 
@@ -615,7 +616,7 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
 
 def DiT_S_4(pretrained=False, **kwargs):
 
-    model = DiT(depth=12, hidden_size=384, context_dim=384, patch_size=4, num_heads=6, **kwargs)
+    model = DiT(depth=12, hidden_size=192, context_dim=192, patch_size=4, num_heads=3, **kwargs)
     if pretrained:
         checkpoint = torch.load('/home/ekirby/workspace/DiT-3D/checkpoints/shapenet_s4_scaled_1/last.ckpt', map_location='cpu')
         if "ema" in checkpoint:  # supports ema checkpoints 

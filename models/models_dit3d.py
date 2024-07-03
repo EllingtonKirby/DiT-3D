@@ -80,21 +80,11 @@ class DiT3D_Diffuser(LightningModule):
         self.scheduler_to_cuda()
 
         pretrained = self.hparams['model']['pretrained']
-        if self.hparams['model']['attention'] == 'window':
-            self.model = DiT3D_models_WindAttn[self.hparams['model']['config']](
-                pretrained=pretrained,
-                window_size=4, 
-                window_block_indexes=(0,3,6,9)
-            )
-        elif self.hparams['model']['attention'] == 'flash':
-            self.model = DiT3D_models_FlashAttn[self.hparams['model']['config']](pretrained=pretrained)
-        elif self.hparams['model']['attention'] == 'cross':
-            if self.hparams['model']['embeddings'] == 'point':
-                self.model = DiT3D_models_CrossAttn[self.hparams['model']['config']](pretrained=pretrained)
-            elif self.hparams['model']['embeddings'] == 'voxel':
-                self.model = DiT3D_models_CrossAttn_Voxel[self.hparams['model']['config']](pretrained=pretrained)
-        else:
-            self.model = DiT3D_models[self.hparams['model']['config']](pretrained=pretrained)
+        attention_type = self.hparams['model']['attention']
+        point_embeddings = self.hparams['model']['embeddings']
+        model_size = self.hparams['model']['config']
+        num_cyclic_conditions =  self.hparams['model']['cyclic_conditions']
+        self.model = self.model_factory(pretrained, attention_type, point_embeddings, model_size, num_cyclic_conditions)
 
         self.chamfer_distance = ChamferDistance()
 
@@ -109,6 +99,19 @@ class DiT3D_Diffuser(LightningModule):
             self.ema.eval()
         else:
             self.ema = None
+
+    def model_factory(self, pretrained, attention_type, point_embeddings, model_size, num_cyclic_conditions):
+        if attention_type == 'window':
+            model = DiT3D_models_WindAttn[model_size]
+        elif attention_type == 'flash':
+            model = DiT3D_models_FlashAttn[model_size]
+        elif attention_type == 'cross' and point_embeddings == 'point':
+            model = DiT3D_models_CrossAttn[model_size]
+        elif attention_type == 'cross' and point_embeddings == 'voxel':
+            model = DiT3D_models_CrossAttn_Voxel[model_size]
+        else:
+            model = DiT3D_models[model_size]
+        return model(pretrained=pretrained, num_cyclic_conditions=num_cyclic_conditions)
 
     def scheduler_to_cuda(self):
         self.dpm_scheduler.timesteps = self.dpm_scheduler.timesteps.cuda()

@@ -335,7 +335,8 @@ class DiT(nn.Module):
         window_size=0,
         window_block_indexes=(),
         use_rel_pos=False,
-        rel_pos_zero_init=True
+        rel_pos_zero_init=True,
+        num_cyclic_conditions=2,
     ):
         super().__init__()
         self.learn_sigma = learn_sigma
@@ -352,7 +353,7 @@ class DiT(nn.Module):
         
         self.t_embedder = TimestepEmbedder(hidden_size)
         self.y_embedder = LabelEmbedder(num_classes, hidden_size, class_dropout_prob)
-        self.c_embedder = ConditionEmbedder(hidden_size)
+        self.c_embedder = ConditionEmbedder(hidden_size, num_cyclic_conditions=num_cyclic_conditions)
 
         # Will use fixed sin-cos embedding:
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, hidden_size), requires_grad=False)
@@ -636,7 +637,7 @@ def DiT_S_2(pretrained=False, **kwargs):
 
 def DiT_S_4(pretrained=False, **kwargs):
 
-    model = DiT(depth=12, hidden_size=384, patch_size=4, num_heads=6, **kwargs)
+    model = DiT(depth=12, hidden_size=384, patch_size=4, num_heads=6, window_size=4, window_block_indexes=(0,3,6,9), **kwargs)
     if pretrained:
         checkpoint = torch.load('/home/ekirby/workspace/DiT-3D/checkpoints/shapenet_s_4_1_epoch=9999.ckpt', map_location='cpu')
         if "ema" in checkpoint:  # supports ema checkpoints 
