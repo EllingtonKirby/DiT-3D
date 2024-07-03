@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional
 import torch.utils
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 from pytorch_lightning import LightningDataModule
 from datasets.dataloader_nuscenes import NuscenesObjectsSet
 import warnings
@@ -25,7 +25,7 @@ class NuscenesObjectsDataModule(LightningDataModule):
         pass
 
     def train_dataloader(self):
-        collate = NuscenesObjectCollator(coordinate_type=self.cfg['data']['coordinates'])
+        collate = NuscenesObjectCollator(self.cfg['data']['stacking_type'])
 
         data_set = NuscenesObjectsSet(
                 data_dir=self.cfg['data']['data_dir'], 
@@ -35,12 +35,12 @@ class NuscenesObjectsDataModule(LightningDataModule):
                 relative_angles=self.cfg['model']['relative_angles'],
                 stacking_type=self.cfg['data']['stacking_type']
             )
-        loader = DataLoader(data_set, batch_size=self.cfg['train']['batch_size'], shuffle=True,
+        loader = DataLoader(data_set, batch_size=self.cfg['train']['batch_size'], shuffle=self.cfg['data']['stacking_type'] != 'max',
                             num_workers=self.cfg['train']['num_workers'], collate_fn=collate)
         return loader
 
     def val_dataloader(self, pre_training=True):
-        collate = NuscenesObjectCollator(coordinate_type=self.cfg['data']['coordinates'])
+        collate = NuscenesObjectCollator(self.cfg['data']['stacking_type'])
 
         data_set = NuscenesObjectsSet(
                 data_dir=self.cfg['data']['data_dir'], 
@@ -55,7 +55,7 @@ class NuscenesObjectsDataModule(LightningDataModule):
         return loader
 
     def test_dataloader(self):
-        collate = NuscenesObjectCollator(coordinate_type=self.cfg['data']['coordinates'])
+        collate = NuscenesObjectCollator(self.cfg['data']['stacking_type'])
 
         data_set = NuscenesObjectsSet(
                 data_dir=self.cfg['data']['data_dir'], 
@@ -70,41 +70,36 @@ class NuscenesObjectsDataModule(LightningDataModule):
         return loader
 
 class NuscenesObjectCollator:
-    def __init__(self, mode='diffusion', coordinate_type='standard'):
-        self.mode = mode
-        self.coordinate_type = coordinate_type
+    def __init__(self, stacking_type):
+        self.max_stack = stacking_type == 'max'
         return
 
     def __call__(self, data):
         # "transpose" the  batch(pt, ptn) to batch(pt), batch(ptn)
         batch = list(zip(*data))
-        pcd_object = torch.from_numpy(np.stack(batch[0]))
-        batch_indices = torch.zeros(len(pcd_object))
 
         num_points_tensor = torch.Tensor(batch[4])
         # cumulative_indices = torch.cumsum(num_points_tensor, dim=0).long()
         # batch_indices[cumulative_indices-1] = 1
         # batch_indices = batch_indices.cumsum(0).long()
         # batch_indices[-1] = batch_indices[-2]
+        if self.max_stack:
+            pcd_object = batch[0]
+            max_points = num_points_tensor.max().int().item()
+            padded_point_clouds = np.zeros((len(pcd_object), max_points, 3))
+            padding_mask = np.zeros((len(pcd_object), max_points))
+            for i, pc in enumerate(pcd_object):
+                padded_point_clouds[i, :pc.shape[0], :] = pc
+                padding_mask [i, :pc.shape[0]] = 1
 
-        # max_points = num_points_tensor.max().int().item()
-        # padded_point_clouds = np.zeros((len(pcd_object), max_points, 3))
-    
-        # for i, pc in enumerate(pcd_object):
-        #     num_points = pc.shape[0]
-        #     if num_points < max_points:
-        #         # Calculate how many times we need to repeat the point cloud
-        #         num_repeats = (max_points + num_points - 1) // num_points  # ceiling division
-                
-        #         # Repeat the point cloud and trim to the maximum size
-        #         repeated_points = np.tile(pc, (num_repeats, 1))[:max_points]
-        #     else:
-        #         repeated_points = pc
-            
-        #     padded_point_clouds[i, :max_points, :] = repeated_points
-        # pcd_object = torch.from_numpy(padded_point_clouds)
+            pcd_object = torch.from_numpy(padded_point_clouds).float()
+            padding_mask = torch.from_numpy(padding_mask).float()
+        else:
+            pcd_object = torch.from_numpy(np.stack(batch[0]))
+            padding_mask = torch.from_numpy(np.stack(batch[7]))
         pcd_object = pcd_object.permute(0,2,1)
-            
+        batch_indices = torch.zeros(len(pcd_object))
+
         # class_mapping = torch.tensor([data_map.class_mapping[class_name] for class_name in batch[6]]).reshape(-1, 1)
         # num_classes = max(data_map.class_mapping.values()) + 1
         # class_mapping = torch.nn.functional.one_hot(class_mapping, num_classes=num_classes)
@@ -117,7 +112,7 @@ class NuscenesObjectCollator:
             'num_points': num_points_tensor,
             'ring_indexes': torch.vstack(batch[5]),
             'class': torch.ones((pcd_object.shape[0], 1)).long(),
-            'padding_mask': torch.from_numpy(np.stack(batch[7]))
+            'padding_mask': padding_mask
         }
 
 dataloaders = {

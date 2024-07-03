@@ -44,7 +44,7 @@ class NuscenesObjectsSet(Dataset):
         object_points = torch.from_numpy(points[points_from_object])[:,:3]
         
         num_points = object_points.shape[0]
-        if self.points_per_object > 0:
+        if self.points_per_object > 0 and self.stacking_type != 'max':
             if object_points.shape[0] > self.points_per_object:
                 pcd_object = o3d.geometry.PointCloud()
                 pcd_object.points = o3d.utility.Vector3dVector(object_points)
@@ -63,6 +63,8 @@ class NuscenesObjectsSet(Dataset):
                     object_points = object_points.repeat(concat_part, 1)
                     object_points = object_points[torch.randperm(object_points.shape[0])][:self.points_per_object]
                     padding_mask = torch.ones((object_points.shape[0]))
+        else:
+            padding_mask = torch.zeros((object_points.shape[0]))
         
         ring_indexes = torch.zeros_like(object_points)
         if self.do_recenter:
