@@ -130,8 +130,8 @@ def find_pcd_and_test_on_object(dir_path, model, do_viz, objects):
             10,
             viz_path=f'{dir_path}' if do_viz else None
         )
-        np.savetxt(f'{dir_path}/generated_{object_info["index"]}.txt', x_gen)
-        np.savetxt(f'{dir_path}/original_{object_info["index"]}.txt', x_orig)
+        np.savetxt(f'{dir_path}/{object_info["index"]}_generated.txt', x_gen)
+        np.savetxt(f'{dir_path}/{object_info["index"]}_original.txt', x_orig)
 
 def find_pcd_and_interpolate_condition(dir_path, conditions, model, objects, do_viz):
     for object_info in objects:
@@ -173,11 +173,11 @@ def find_pcd_and_interpolate_condition(dir_path, conditions, model, objects, do_
                 for index, dist in enumerate(linspace_dist):
                     new_cyl = center_cyl.clone()
                     new_cyl[:,1] = dist.item()
-                    orig_total_points = pcd.shape[0]
+                    orig_total_points = pcd.shape[-1]
                     subsampled_total_points = orig_total_points // (index + 2)
                     random_order = torch.randperm(orig_total_points)
-                    new_pcd = pcd.clone()[random_order]
-                    new_pcd = new_pcd[:subsampled_total_points]
+                    new_pcd = pcd.clone()[:, :, random_order]
+                    new_pcd = new_pcd[:, :, :subsampled_total_points]
                     do_gen(condition, index=index, center_cyl=new_cyl, pcd=new_pcd)
             
 @click.command()
@@ -243,7 +243,7 @@ def main(config, weights, output_path, name, task, class_name, split, min_points
     dir_path = f'{output_path}/{name}'
     os.makedirs(dir_path, exist_ok=True)
     cfg = yaml.safe_load(open(config))
-    cfg['diff']['s_steps'] = 50
+    cfg['diff']['s_steps'] = 500
     cfg['diff']['uncond_w'] = 6.
     cfg['train']['batch_size'] = 1
     model = DiT3D_Diffuser.load_from_checkpoint(weights, hparams=cfg).cuda()
@@ -259,7 +259,7 @@ def main(config, weights, output_path, name, task, class_name, split, min_points
     if task == 'interpolate':
         find_pcd_and_interpolate_condition(
             dir_path=dir_path, 
-            conditions=['yaw','cylinder_angle','cylinder_distance'], 
+            conditions=['cylinder_angle','cylinder_distance'], 
             model=model, 
             do_viz=do_viz, 
             objects=objects
