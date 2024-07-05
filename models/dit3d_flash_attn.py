@@ -63,7 +63,7 @@ class PointEmbed(nn.Module):
 
         # compute nearest neighbors in 3D euclidean space
         dist = -torch.norm(x.unsqueeze(-1) - x.unsqueeze(-2), dim=1, p=None)
-        knn = dist.topk(self.num_neighbors, largest=False) # Not efficient
+        knn = dist.topk(min(self.num_neighbors, N), largest=False) # Not efficient
         neighbors = knn.indices.transpose(1,2) # [B K N]
 
         gather = []

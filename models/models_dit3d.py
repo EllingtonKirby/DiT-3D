@@ -19,6 +19,7 @@ from modules.metrics import ChamferDistance
 from modules.three_d_helpers import build_two_point_clouds
 from copy import deepcopy
 from modules.ema_utls import update_ema
+import modules.class_mapping as class_mapping
 
 
 class DiT3D_Diffuser(LightningModule):
@@ -84,7 +85,8 @@ class DiT3D_Diffuser(LightningModule):
         point_embeddings = self.hparams['model']['embeddings']
         model_size = self.hparams['model']['config']
         num_cyclic_conditions =  self.hparams['model']['cyclic_conditions']
-        self.model = self.model_factory(pretrained, attention_type, point_embeddings, model_size, num_cyclic_conditions)
+        num_classes = 1 if self.hparams['train']['class_conditional'] == False else class_mapping.num_classes
+        self.model = self.model_factory(pretrained, attention_type, point_embeddings, model_size, num_cyclic_conditions, num_classes)
 
         self.chamfer_distance = ChamferDistance()
 
@@ -100,7 +102,7 @@ class DiT3D_Diffuser(LightningModule):
         else:
             self.ema = None
 
-    def model_factory(self, pretrained, attention_type, point_embeddings, model_size, num_cyclic_conditions):
+    def model_factory(self, pretrained, attention_type, point_embeddings, model_size, num_cyclic_conditions, num_classes):
         if attention_type == 'window':
             model = DiT3D_models_WindAttn[model_size]
         elif attention_type == 'flash':
@@ -111,7 +113,7 @@ class DiT3D_Diffuser(LightningModule):
             model = DiT3D_models_CrossAttn_Voxel[model_size]
         else:
             model = DiT3D_models[model_size]
-        return model(pretrained=pretrained, num_cyclic_conditions=num_cyclic_conditions)
+        return model(pretrained=pretrained, num_cyclic_conditions=num_cyclic_conditions, num_classes=num_classes)
 
     def scheduler_to_cuda(self):
         self.dpm_scheduler.timesteps = self.dpm_scheduler.timesteps.cuda()
@@ -139,9 +141,9 @@ class DiT3D_Diffuser(LightningModule):
 
         pcd.points = o3d.utility.Vector3dVector(points)
        
-        colors = np.ones((len(points), 3)) * .5
-        colors[:len(gt_pts[0])] = [1.,.3,.3]
-        colors[-len(gt_pts[0]):] = [.3,1.,.3]
+        colors = np.ones((len(points), 3))
+        colors[:len(gt_pts)] = [1.,.3,.3]
+        colors[len(gt_pts):] = [.3,1.,.3]
         pcd.colors = o3d.utility.Vector3dVector(colors)
         return pcd
 
@@ -290,16 +292,6 @@ class DiT3D_Diffuser(LightningModule):
         return np.all(skip), output_paths
 
     def test_step(self, batch:dict, batch_idx):
-        self.dpm_scheduler = DPMSolverMultistepScheduler(
-                num_train_timesteps=self.t_steps,
-                beta_start=self.hparams['diff']['beta_start'],
-                beta_end=self.hparams['diff']['beta_end'],
-                beta_schedule='linear',
-                algorithm_type='sde-dpmsolver++',
-                solver_order=2,
-        )
-        self.dpm_scheduler.set_timesteps(self.s_steps)
-        self.scheduler_to_cuda()
         self.model.eval()
         
         viz_pcd = o3d.geometry.PointCloud()
@@ -322,33 +314,44 @@ class DiT3D_Diffuser(LightningModule):
                 x_cond = torch.hstack((x_center, x_size, x_orientation))
             x_uncond = torch.zeros_like(x_cond)
 
+            padding_mask = batch['padding_mask']
+
             x_gen_evals = []
             num_val_samples = self.hparams['diff']['num_val_samples']
             for i in range(num_val_samples):
                 np.random.seed(i)
                 torch.manual_seed(i)
                 torch.cuda.manual_seed(i)
-                noise = torch.randn(x_object.shape, device=self.device)
-                x_t = self.points_to_tensor(noise, batch['batch_indices'])
-                x_gen_eval = self.p_sample_loop(x_t, x_cond, x_uncond, batch['batch_indices'], batch['num_points'],  batch['class'])
-                x_gen_evals.append(x_gen_eval.F)
+                self.dpm_scheduler = DPMSolverMultistepScheduler(
+                    num_train_timesteps=self.t_steps,
+                    beta_start=self.hparams['diff']['beta_start'],
+                    beta_end=self.hparams['diff']['beta_end'],
+                    beta_schedule='linear',
+                    algorithm_type='sde-dpmsolver++',
+                    solver_order=2,
+                )
+                self.dpm_scheduler.set_timesteps(self.s_steps)
+                self.scheduler_to_cuda()
+                x_t = torch.randn(x_object.shape, device=self.device)
+                x_gen_eval = self.p_sample_loop(x_t, batch['class'], x_cond, x_uncond, padding_mask[:, None, :]).permute(0,2,1)
+                x_gen_evals.append(x_gen_eval)
 
-            curr_index = 0
+            x_object = x_object.permute(0,2,1)
             cd_mean_as_pct_of_box = []
             for pcd_index in range(batch['num_points'].shape[0]):
-                max_index = int(curr_index + batch['num_points'][pcd_index].item())
-                object_pcd = x_object[curr_index:max_index]
+                mask = padding_mask[pcd_index].int() == True
+                object_pcd = x_object[pcd_index].squeeze(0)[mask]
                 
                 local_chamfer = ChamferDistance()
                 for generated_pcds in x_gen_evals:
-                    genrtd_pcd = generated_pcds[curr_index:max_index]
+                    genrtd_pcd = generated_pcds[pcd_index].squeeze(0)[mask]
 
                     pcd_pred, pcd_gt = build_two_point_clouds(genrtd_pcd=genrtd_pcd, object_pcd=object_pcd)
 
                     local_chamfer.update(pcd_gt, pcd_pred)
 
                 best_index = local_chamfer.best_index()
-                genrtd_pcd = x_gen_evals[best_index][curr_index:max_index]
+                genrtd_pcd = x_gen_evals[best_index][pcd_index].squeeze(0)[mask]
 
                 pcd_pred, pcd_gt = build_two_point_clouds(genrtd_pcd=genrtd_pcd, object_pcd=object_pcd)
 
@@ -357,14 +360,14 @@ class DiT3D_Diffuser(LightningModule):
                 last_cd = self.chamfer_distance.last_cd()
                 box = batch['size'][pcd_index].cpu()
                 cd_mean_as_pct_of_box.append((last_cd / box.mean())*100.)
-                curr_index = max_index
+
                 if pcd_index == 0:
                     visualization_1 = self.visualize_step_t(genrtd_pcd, object_pcd, viz_pcd)
                     o3d.io.write_point_cloud(f'{self.logger.log_dir}/generated_pcd/visualizations/batch_{batch_idx}_object_{pcd_index}_seed_{best_index}_best.ply', visualization_1)
                     random_choices = [i for i in range(num_val_samples) if i != best_index]
                     shuffle(random_choices)
                     for i in random_choices[0:2]:
-                        genrtd_pcd_2 = x_gen_evals[i][curr_index:max_index]
+                        genrtd_pcd_2 = x_gen_evals[i][pcd_index]
                         visualization_2 = self.visualize_step_t(genrtd_pcd_2, object_pcd, viz_pcd)
                         o3d.io.write_point_cloud(f'{self.logger.log_dir}/generated_pcd/visualizations/batch_{batch_idx}_object_{pcd_index}_seed_{i}.ply', visualization_2)
 

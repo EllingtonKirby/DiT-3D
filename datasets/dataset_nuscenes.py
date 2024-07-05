@@ -33,9 +33,10 @@ class NuscenesObjectsDataModule(LightningDataModule):
                 points_per_object=self.cfg['data']['points_per_object'],
                 align_objects=self.cfg['data']['align_objects'],
                 relative_angles=self.cfg['model']['relative_angles'],
-                stacking_type=self.cfg['data']['stacking_type']
+                stacking_type=self.cfg['data']['stacking_type'],
+                class_conditional=self.cfg['train']['class_conditional']
             )
-        loader = DataLoader(data_set, batch_size=self.cfg['train']['batch_size'], shuffle=self.cfg['data']['stacking_type'] != 'max',
+        loader = DataLoader(data_set, batch_size=self.cfg['train']['batch_size'], shuffle=True,
                             num_workers=self.cfg['train']['num_workers'], collate_fn=collate)
         return loader
 
@@ -48,9 +49,10 @@ class NuscenesObjectsDataModule(LightningDataModule):
                 points_per_object=self.cfg['data']['points_per_object'],
                 align_objects=self.cfg['data']['align_objects'],
                 relative_angles=self.cfg['model']['relative_angles'],
-                stacking_type=self.cfg['data']['stacking_type']
+                stacking_type=self.cfg['data']['stacking_type'],
+                class_conditional=self.cfg['train']['class_conditional']
             )
-        loader = DataLoader(data_set, batch_size=self.cfg['train']['batch_size'],
+        loader = DataLoader(data_set, batch_size=self.cfg['train']['batch_size'], shuffle=True,
                             num_workers=self.cfg['train']['num_workers'], collate_fn=collate)
         return loader
 
@@ -63,7 +65,8 @@ class NuscenesObjectsDataModule(LightningDataModule):
                 points_per_object=self.cfg['data']['points_per_object'],
                 align_objects=self.cfg['data']['align_objects'],
                 relative_angles=self.cfg['model']['relative_angles'],
-                stacking_type=self.cfg['data']['stacking_type']
+                stacking_type=self.cfg['data']['stacking_type'],
+                class_conditional=self.cfg['train']['class_conditional']
             )
         loader = DataLoader(data_set, batch_size=self.cfg['train']['batch_size'],
                              num_workers=self.cfg['train']['num_workers'], collate_fn=collate)
@@ -79,10 +82,7 @@ class NuscenesObjectCollator:
         batch = list(zip(*data))
 
         num_points_tensor = torch.Tensor(batch[4])
-        # cumulative_indices = torch.cumsum(num_points_tensor, dim=0).long()
-        # batch_indices[cumulative_indices-1] = 1
-        # batch_indices = batch_indices.cumsum(0).long()
-        # batch_indices[-1] = batch_indices[-2]
+
         if self.max_stack:
             pcd_object = batch[0]
             max_points = num_points_tensor.max().int().item()
@@ -100,10 +100,6 @@ class NuscenesObjectCollator:
         pcd_object = pcd_object.permute(0,2,1)
         batch_indices = torch.zeros(len(pcd_object))
 
-        # class_mapping = torch.tensor([data_map.class_mapping[class_name] for class_name in batch[6]]).reshape(-1, 1)
-        # num_classes = max(data_map.class_mapping.values()) + 1
-        # class_mapping = torch.nn.functional.one_hot(class_mapping, num_classes=num_classes)
-
         return {'pcd_object': pcd_object, 
             'center':  torch.from_numpy(np.vstack(batch[1])).float(),
             'size':  torch.from_numpy(np.vstack(batch[2])).float(),
@@ -111,7 +107,7 @@ class NuscenesObjectCollator:
             'batch_indices': batch_indices,
             'num_points': num_points_tensor,
             'ring_indexes': torch.vstack(batch[5]),
-            'class': torch.ones((pcd_object.shape[0], 1)).long(),
+            'class': torch.vstack(batch[6]),
             'padding_mask': padding_mask
         }
 

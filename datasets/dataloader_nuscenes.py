@@ -9,9 +9,20 @@ from nuscenes.utils.geometry_utils import points_in_box
 from nuscenes.utils.data_classes import Box, Quaternion
 from modules.three_d_helpers import cartesian_to_cylindrical
 import open3d as o3d
+from modules.class_mapping import class_mapping
 
 class NuscenesObjectsSet(Dataset):
-    def __init__(self, data_dir, split, points_per_object=None, volume_expansion=1., recenter=True, align_objects=False, relative_angles=False, stacking_type='duplicate'):
+    def __init__(self, 
+                data_dir,
+                split, 
+                points_per_object=None, 
+                volume_expansion=1., 
+                recenter=True, 
+                align_objects=False, 
+                relative_angles=False, 
+                stacking_type='duplicate',
+                class_conditional=False,
+                ):
         super().__init__()
         with open(data_dir, 'r') as f:
             self.data_index = json.load(f)[split]
@@ -23,6 +34,7 @@ class NuscenesObjectsSet(Dataset):
         self.align_objects = align_objects
         self.relative_angles = relative_angles
         self.stacking_type = stacking_type
+        self.class_conditional = class_conditional
 
     def __len__(self):
         return self.nr_data
@@ -85,5 +97,9 @@ class NuscenesObjectsSet(Dataset):
 
         if self.relative_angles:
             center[0] -= yaw
-        
-        return [object_points, center, torch.from_numpy(size), yaw, num_points, ring_indexes, class_name, padding_mask]
+
+        if self.class_conditional:
+            class_label = torch.tensor(class_mapping[class_name])
+        else:
+            class_label = torch.ones((1)).int()
+        return [object_points, center, torch.from_numpy(size), yaw, num_points, ring_indexes, class_label, padding_mask]

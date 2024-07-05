@@ -129,6 +129,18 @@ class LabelEmbedder(nn.Module):
         # # print('token drop labels:', labels, labels.shape)
         embeddings = self.embedding_table(labels)
         return embeddings
+    
+class ClassFeaturesEmbedder(nn.Module):
+    """
+    Embeds class features into hidden dim size.
+    """
+    def __init__(self, input_features, hidden_size):
+        super().__init__()
+        self.projection = nn.Linear(input_features, hidden_size)
+
+    def forward(self, labels):
+        embeddings = self.projection(labels)
+        return embeddings
 
 class ConditionEmbedder(nn.Module):
     """
@@ -366,6 +378,7 @@ class DiT(nn.Module):
             num_classes=1,
             compile_components=False,
             num_cyclic_conditions=1,
+            class_features=-1
     ):
         super().__init__()
         self.learn_sigma = learn_sigma
@@ -373,6 +386,7 @@ class DiT(nn.Module):
         self.out_channels = in_channels * 2 if learn_sigma else in_channels
         self.num_heads = num_heads
         self.patch_size = patch_size
+        self.class_features = class_features
 
         self.input_size = input_size
         self.voxelization = Voxelization(resolution=input_size, normalize=True, eps=0)
@@ -382,8 +396,11 @@ class DiT(nn.Module):
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, hidden_size), requires_grad=False)
 
         self.t_embedder = TimestepEmbedder(hidden_size)
-        self.y_embedder = LabelEmbedder(num_classes, hidden_size, .1)
 
+        if self.class_features == -1:
+            self.y_embedder = LabelEmbedder(num_classes, hidden_size, .1)
+        else:
+            self.y_embedder = ClassFeaturesEmbedder(hidden_size, class_features)
 
         self.c_embedder = ConditionEmbedder(hidden_size, num_cyclic_conditions=num_cyclic_conditions)
 
@@ -437,7 +454,10 @@ class DiT(nn.Module):
         nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
         
         # Initialize label embedding table:
-        nn.init.normal_(self.y_embedder.embedding_table.weight, std=0.02)
+        if self.class_features == -1:
+            nn.init.normal_(self.y_embedder.embedding_table.weight, std=0.02)
+        else:
+             nn.init.normal_(self.y_embedder.projection.weight, std=0.02)
 
         # Initialize timestep embedding MLP:
         nn.init.normal_(self.t_embedder.mlp[0].weight, std=0.02)
@@ -618,7 +638,7 @@ def DiT_S_4(pretrained=False, **kwargs):
 
     model = DiT(depth=12, hidden_size=192, context_dim=192, patch_size=4, num_heads=3, **kwargs)
     if pretrained:
-        checkpoint = torch.load('/home/ekirby/workspace/DiT-3D/checkpoints/shapenet_s4_scaled_1/last.ckpt', map_location='cpu')
+        checkpoint = torch.load('/home/ekirby/workspace/DiT-3D/checkpoints/shapenet_s4_cross_voxel_2/last.ckpt', map_location='cpu')
         if "ema" in checkpoint:  # supports ema checkpoints 
             checkpoint = checkpoint["ema"]
         checkpoint_blocks = {k: checkpoint[k] for k in checkpoint if k.startswith('blocks')}
