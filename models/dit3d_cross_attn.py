@@ -74,7 +74,7 @@ class PointEmbed(nn.Module):
 
         # compute nearest neighbors in 3D euclidean space
         dist = -torch.norm(x.unsqueeze(-1) - x.unsqueeze(-2), dim=1, p=None)
-        knn = dist.topk(self.num_neighbors, largest=False) # Not efficient
+        knn = dist.topk(min(self.num_neighbors, N), largest=False) # Not efficient
         neighbors = knn.indices.transpose(1,2) # [B K N]
 
         gather = []
@@ -532,9 +532,9 @@ class DiT(nn.Module):
 #                                   DiT Configs                                  #
 #################################################################################
 
-def DiT_S_4(pretrained=False, **kwargs):
+def DiT_XS_4(pretrained=False, **kwargs):
 
-    model = DiT(depth=12, hidden_size=192, context_dim=192, num_heads=3, **kwargs)
+    model = DiT(depth=12, hidden_size=192, context_dim=192, patch_size=4, num_heads=3, **kwargs)
     if pretrained:
         checkpoint = torch.load('/home/ekirby/workspace/DiT-3D/checkpoints/shapenet_s4_scaled_1/last.ckpt', map_location='cpu')
         if "ema" in checkpoint:  # supports ema checkpoints 
@@ -546,5 +546,5 @@ def DiT_S_4(pretrained=False, **kwargs):
     return model
 
 DiT3D_models_CrossAttn = {
-    'DiT-S/4':  DiT_S_4,
+    'DiT-XS/4':  DiT_XS_4,
 }

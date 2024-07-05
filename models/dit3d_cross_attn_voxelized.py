@@ -634,7 +634,7 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
 #                                   DiT Configs                                  #
 #################################################################################
 
-def DiT_S_4(pretrained=False, **kwargs):
+def DiT_XS_4(pretrained=False, **kwargs):
 
     model = DiT(depth=12, hidden_size=192, context_dim=192, patch_size=4, num_heads=3, **kwargs)
     if pretrained:
@@ -648,5 +648,5 @@ def DiT_S_4(pretrained=False, **kwargs):
     return model
 
 DiT3D_models_CrossAttn_Voxel = {
-    'DiT-S/4':  DiT_S_4,
+    'DiT-XS/4':  DiT_XS_4,
 }

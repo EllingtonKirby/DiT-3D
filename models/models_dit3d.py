@@ -105,13 +105,13 @@ class DiT3D_Diffuser(LightningModule):
     def model_factory(self, pretrained, attention_type, point_embeddings, model_size, num_cyclic_conditions, num_classes):
         if attention_type == 'window':
             model = DiT3D_models_WindAttn[model_size]
-        elif attention_type == 'flash':
+        elif attention_type == 'flash' or (attention_type == 'self' and point_embeddings == 'point'):
             model = DiT3D_models_FlashAttn[model_size]
         elif attention_type == 'cross' and point_embeddings == 'point':
             model = DiT3D_models_CrossAttn[model_size]
         elif attention_type == 'cross' and point_embeddings == 'voxel':
             model = DiT3D_models_CrossAttn_Voxel[model_size]
-        else:
+        else: # Self attention with voxel embeddings
             model = DiT3D_models[model_size]
         return model(pretrained=pretrained, num_cyclic_conditions=num_cyclic_conditions, num_classes=num_classes)
 
@@ -319,9 +319,6 @@ class DiT3D_Diffuser(LightningModule):
             x_gen_evals = []
             num_val_samples = self.hparams['diff']['num_val_samples']
             for i in range(num_val_samples):
-                np.random.seed(i)
-                torch.manual_seed(i)
-                torch.cuda.manual_seed(i)
                 self.dpm_scheduler = DPMSolverMultistepScheduler(
                     num_train_timesteps=self.t_steps,
                     beta_start=self.hparams['diff']['beta_start'],

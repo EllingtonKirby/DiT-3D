@@ -217,10 +217,9 @@ class DiTBlock(nn.Module):
         approx_gelu = lambda: nn.GELU(approximate="tanh")
 
         self.mlp = Mlp(in_features=hidden_size, hidden_features=mlp_hidden_dim, act_layer=approx_gelu, drop=0)
-        self.num_conditions = 8
         self.adaLN_modulation = nn.Sequential(
             nn.SiLU(),
-            nn.Linear(hidden_size * self.num_conditions, 6 * hidden_size, bias=True)
+            nn.Linear(hidden_size, 6 * hidden_size, bias=True)
         )
 
 
@@ -239,10 +238,9 @@ class FinalLayer(nn.Module):
         super().__init__()
         self.norm_final = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.linear = nn.Linear(hidden_size, out_channels, bias=True)
-        self.num_conditions = 8
         self.adaLN_modulation = nn.Sequential(
             nn.SiLU(),
-            nn.Linear(hidden_size * self.num_conditions, 2 * hidden_size, bias=True)
+            nn.Linear(hidden_size, 2 * hidden_size, bias=True)
         )
 
     def forward(self, x, c):
@@ -333,7 +331,7 @@ class DiT(nn.Module):
         t = self.t_embedder(t).unsqueeze(1)
         y = self.y_embedder(y, self.training)    
         c = self.c_embedder(c)
-        c = torch.cat((t, y, c), dim=1).flatten(1)
+        c = torch.cat((t, y, c), dim=1).sum(dim=1)
 
         x = x.transpose(-1,-2)
         for block in self.blocks:
@@ -365,73 +363,8 @@ class DiT(nn.Module):
 #################################################################################
 #                                   DiT Configs                                  #
 #################################################################################
-def DiT_XL_2(pretrained=False, **kwargs):
 
-    model = DiT(depth=28, hidden_size=1152, patch_size=2, num_heads=16, **kwargs)
-    if pretrained:
-        checkpoint = torch.load('/home/ekirby/workspace/DiT-3D/checkpoints/DiT-XL-2-512x512.pt', map_location='cpu')
-        if "ema" in checkpoint:  # supports ema checkpoints 
-            checkpoint = checkpoint["ema"]
-        checkpoint_blocks = {k: checkpoint[k] for k in checkpoint if k.startswith('blocks')}
-        # load pre-trained blocks from 2d DiT
-        msg = model.load_state_dict(checkpoint_blocks, strict=False)
-
-    return model
-
-def DiT_XL_4(pretrained=False, **kwargs):
-
-    model = DiT(depth=28, hidden_size=1152, patch_size=4, num_heads=16, **kwargs)
-    if pretrained:
-        checkpoint = torch.load('/path/to/DiT2D_pretrained_weights/DiT-XL-2-512x512.pt', map_location='cpu')
-        if "ema" in checkpoint:  # supports ema checkpoints 
-            checkpoint = checkpoint["ema"]
-        checkpoint_blocks = {k: checkpoint[k] for k in checkpoint if k.startswith('blocks')}
-        # load pre-trained blocks from 2d DiT
-        msg = model.load_state_dict(checkpoint_blocks, strict=False)
-    
-    return model
-
-def DiT_XL_8(pretrained=False, **kwargs):
-
-    model = DiT(depth=28, hidden_size=1152, patch_size=8, num_heads=16, **kwargs)
-    if pretrained:
-        checkpoint = torch.load('/path/to/DiT2D_pretrained_weights/DiT-XL-2-512x512.pt', map_location='cpu')
-        if "ema" in checkpoint:  # supports ema checkpoints 
-            checkpoint = checkpoint["ema"]
-        checkpoint_blocks = {k: checkpoint[k] for k in checkpoint if not k.startswith('blocks')}
-        # load pre-trained blocks from 2d DiT
-        msg = model.load_state_dict(checkpoint_blocks, strict=False)
-
-    return model
-
-def DiT_L_2(pretrained=False, **kwargs):
-    return DiT(depth=24, hidden_size=1152, num_heads=16, **kwargs)
-
-def DiT_L_4(pretrained=False, **kwargs):
-    return DiT(depth=24, hidden_size=1152, num_heads=16, **kwargs)
-
-def DiT_L_8(pretrained=False, **kwargs):
-    return DiT(depth=24, hidden_size=1152, num_heads=16, **kwargs)
-
-def DiT_B_2(pretrained=False, **kwargs):
-    return DiT(depth=12, hidden_size=768, num_heads=12, **kwargs)
-
-def DiT_B_4(pretrained=False, **kwargs):
-    return DiT(depth=12, hidden_size=768, num_heads=12, **kwargs)
-
-def DiT_B_8(pretrained=False, **kwargs):
-    return DiT(depth=12, hidden_size=768, num_heads=12, **kwargs)
-
-def DiT_B_16(pretrained=False, **kwargs):
-    return DiT(depth=12, hidden_size=768, num_heads=12, **kwargs)
-
-def DiT_B_32(pretrained=False, **kwargs):
-    return DiT(depth=12, hidden_size=768, num_heads=12, **kwargs)
-
-def DiT_S_2(pretrained=False, **kwargs):
-    return DiT(depth=12, hidden_size=384, num_heads=6, **kwargs)
-
-def DiT_S_4(pretrained=False, **kwargs):
+def DiT_XS_4(pretrained=False, **kwargs):
 
     model = DiT(depth=12, hidden_size=192, num_heads=3, **kwargs)
     if pretrained:
@@ -444,18 +377,6 @@ def DiT_S_4(pretrained=False, **kwargs):
 
     return model
 
-def DiT_S_8(pretrained=False, **kwargs):
-    return DiT(depth=12, hidden_size=384, num_heads=6, **kwargs)
-
-def DiT_S_16(pretrained=False, **kwargs):
-    return DiT(depth=12, hidden_size=384, num_heads=6, **kwargs)
-
-def DiT_S_32(pretrained=False, **kwargs):
-    return DiT(depth=12, hidden_size=384, num_heads=6, **kwargs)
-
 DiT3D_models_FlashAttn = {
-    'DiT-XL/2': DiT_XL_2,  'DiT-XL/4': DiT_XL_4,  'DiT-XL/8': DiT_XL_8,
-    'DiT-L/2':  DiT_L_2,   'DiT-L/4':  DiT_L_4,   'DiT-L/8':  DiT_L_8,
-    'DiT-B/2':  DiT_B_2,   'DiT-B/4':  DiT_B_4,   'DiT-B/8':  DiT_B_8,
-    'DiT-S/2':  DiT_S_2,   'DiT-S/4':  DiT_S_4,   'DiT-S/8':  DiT_S_8,
+    'DiT-XS/4':  DiT_XS_4,
 }
