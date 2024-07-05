@@ -1,5 +1,5 @@
 experiment:
-    id: bikes_s_4_cross_voxel_sorted_pretrained_2_eval
+    id: bikes_s_4_cross_voxel_sorted_pretrained_2_eval_2
 
 ##Data
 data:
@@ -29,7 +29,7 @@ diff:
     beta_end: 0.007
     beta_func: 'linear'
     t_steps: 1000
-    s_steps: 50
+    s_steps: 500
     reg_weight: 0.0
     visualize: False
     num_val_samples: 10
@@ -41,6 +41,6 @@ model:
     num_conditions: 7
     cyclic_conditions: 1
     relative_angles: True
-    config: DiT-S/4
+    config: DiT-XS/4
     attention: cross
     pretrained: True
