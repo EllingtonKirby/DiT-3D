@@ -1,9 +1,9 @@
 experiment:
-    id: bikes_s_4_cross_voxel_pad_1
+    id: bikes_s_4_cross_voxel_pad_2_eval
 
 ##Data
 data:
-    data_dir: '/home/ekirby/scania/ekirby/datasets/bikes_from_nuscenes/bikes_from_nuscenes_train_val.json'
+    data_dir: '/home/ekirby/scania/ekirby/datasets/bikes_from_nuscenes/bikes_from_nuscenes_train_val_sorted.json'
     resolution: 0.05
     dataloader: 'nuscenes'
     coordinates: 'cylindrical'
@@ -15,9 +15,9 @@ data:
 train:
     uncond_prob: 0.1
     uncond_w: 6.
-    n_gpus: 4
-    num_workers: 32
-    max_epoch: 2000
+    n_gpus: 1
+    num_workers: 4
+    max_epoch: 8000
     lr: 0.0001
     batch_size: 16
     decay_lr: 1.0e-4

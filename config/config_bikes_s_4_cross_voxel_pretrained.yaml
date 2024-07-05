@@ -1,5 +1,5 @@
 experiment:
-    id: bikes_s_4_cross_1_eval
+    id: bikes_s_4_cross_voxel_sorted_pretrained_2_eval
 
 ##Data
 data:
@@ -7,9 +7,9 @@ data:
     resolution: 0.05
     dataloader: 'nuscenes'
     coordinates: 'cylindrical'
-    points_per_object: 100
+    points_per_object: -1
     align_objects: True
-    stacking_type: pad
+    stacking_type: max
 
 ##Training
 train:
@@ -37,10 +37,10 @@ diff:
 ##Network
 model:
     out_dim: 96
-    embeddings: 'point'
+    embeddings: 'voxel'
     num_conditions: 7
     cyclic_conditions: 1
     relative_angles: True
     config: DiT-S/4
     attention: cross
-    pretrained: False
+    pretrained: True
