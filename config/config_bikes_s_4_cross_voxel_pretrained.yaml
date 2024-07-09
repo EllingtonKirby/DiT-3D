@@ -1,5 +1,5 @@
 experiment:
-    id: bikes_s_4_cross_voxel_sorted_pretrained_2_eval_2
+    id: bikes_s_4_cross_voxel_sorted_pretrained_2_eval_3
 
 ##Data
 data:
@@ -14,7 +14,7 @@ data:
 ##Training
 train:
     uncond_prob: 0.1
-    uncond_w: 6.
+    uncond_w: 1.0
     n_gpus: 1
     num_workers: 4
     max_epoch: 10000

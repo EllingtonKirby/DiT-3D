@@ -23,7 +23,7 @@ from models.models_dit3d import DiT3D_Diffuser
 def main(config, weights):
     cfg = yaml.safe_load(open(config))
     og_id = cfg['experiment']['id']
-    w_params = np.linspace(start=0.0, stop=20.0, num=21)
+    w_params = np.linspace(start=0.0, stop=2.0, num=3)
     for w in w_params:
         cfg['train']['uncond_w'] = w
         cfg['experiment']['id'] = og_id + f'_w_{cfg["train"]["uncond_w"]}'
@@ -67,7 +67,6 @@ def main(config, weights):
                             callbacks=[lr_monitor, checkpoint_saver],
                             check_val_every_n_epoch=10,
                             num_sanity_val_steps=0,
-                            limit_test_batches=10,
                             limit_val_batches=1,
                     )
         trainer.test(model, data)

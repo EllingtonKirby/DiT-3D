@@ -1,5 +1,5 @@
 experiment:
-    id: multiclass_xs_4_cross_voxel_max_2a_1
+    id: multiclass_xs_4_cross_voxel_max_2a_1_eval
 ##Data
 data:
     data_dir: /home/ekirby/scania/ekirby/datasets/all_objects_nuscenes_cleaned/all_objects_nuscenes_cleaned_train_val.json
@@ -12,9 +12,9 @@ data:
 ##Training
 train:
     uncond_prob: 0.1
-    uncond_w: 6.
-    n_gpus: 5
-    num_workers: 32
+    uncond_w: 1.
+    n_gpus: 1
+    num_workers: 4
     max_epoch: 10000
     lr: 0.0001
     batch_size: 16
@@ -38,6 +38,6 @@ model:
     num_conditions: 8
     cyclic_conditions: 2
     relative_angles: False
-    config: DiT-S/4
+    config: DiT-XS/4
     attention: cross
     pretrained: False
