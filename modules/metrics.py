@@ -1,6 +1,7 @@
 import open3d as o3d
 import numpy as np
 import scipy
+from metrics.PyTorchEMD.emd import earth_mover_distance
 
 MESHTYPE = 6
 TETRATYPE = 10
@@ -223,3 +224,25 @@ class PrecisionRecall(Metrics3D):
         idx = (np.abs(self.thresholds - value)).argmin()
         return self.thresholds[idx]
 
+class EMD():
+    def __init__(self):
+        self.dists = []
+
+        return
+
+    def update(self, gt_pts, gen_pts):
+        emd_batch = earth_mover_distance(gen_pts.cuda().float(), gt_pts.cuda().float(), transpose=False)
+        self.dists.append(emd_batch.view(1, -1).detach().cpu())
+
+    def reset(self):
+        self.dists = []
+
+    def compute(self):
+        cdist = np.array(self.dists)
+        return cdist.mean(), cdist.std()
+    
+    def last_cd(self):
+        return self.dists[-1]
+    
+    def best_index(self):
+        return np.array(self.dists).argmin()

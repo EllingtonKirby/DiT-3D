@@ -15,7 +15,7 @@ from models.dit3d_window_attn import DiT3D_models_WindAttn
 from models.dit3d_flash_attn import DiT3D_models_FlashAttn
 from models.dit3d_cross_attn import DiT3D_models_CrossAttn
 from models.dit3d_cross_attn_voxelized import DiT3D_models_CrossAttn_Voxel
-from modules.metrics import ChamferDistance
+from modules.metrics import ChamferDistance, EMD
 from modules.three_d_helpers import build_two_point_clouds
 from copy import deepcopy
 from modules.ema_utls import update_ema
@@ -89,6 +89,7 @@ class DiT3D_Diffuser(LightningModule):
         self.model = self.model_factory(pretrained, attention_type, point_embeddings, model_size, num_cyclic_conditions, num_classes)
 
         self.chamfer_distance = ChamferDistance()
+        self.emd = EMD()
 
         self.w_uncond = self.hparams['train']['uncond_w']
         self.visualize = self.hparams['diff']['visualize']
@@ -111,7 +112,7 @@ class DiT3D_Diffuser(LightningModule):
             model = DiT3D_models_CrossAttn[model_size]
         elif attention_type == 'cross' and point_embeddings == 'voxel':
             model = DiT3D_models_CrossAttn_Voxel[model_size]
-        else: # Self attention with voxel embeddings
+        elif attention_type == 'self' and point_embeddings == 'voxel': # Self attention with voxel embeddings
             model = DiT3D_models[model_size]
         return model(pretrained=pretrained, num_cyclic_conditions=num_cyclic_conditions, num_classes=num_classes)
 
@@ -340,28 +341,35 @@ class DiT3D_Diffuser(LightningModule):
                 object_pcd = x_object[pcd_index].squeeze(0)[mask]
                 
                 local_chamfer = ChamferDistance()
+                local_emd = EMD()
                 for generated_pcds in x_gen_evals:
                     genrtd_pcd = generated_pcds[pcd_index].squeeze(0)[mask]
 
                     pcd_pred, pcd_gt = build_two_point_clouds(genrtd_pcd=genrtd_pcd, object_pcd=object_pcd)
 
                     local_chamfer.update(pcd_gt, pcd_pred)
+                    local_emd.update(gt_pts=object_pcd, gen_pts=genrtd_pcd)
 
-                best_index = local_chamfer.best_index()
-                genrtd_pcd = x_gen_evals[best_index][pcd_index].squeeze(0)[mask]
-
-                pcd_pred, pcd_gt = build_two_point_clouds(genrtd_pcd=genrtd_pcd, object_pcd=object_pcd)
-
+                best_index_cd = local_chamfer.best_index()
+                genrtd_pcd_cd = x_gen_evals[best_index_cd][pcd_index].squeeze(0)[mask]
+                pcd_pred, pcd_gt = build_two_point_clouds(genrtd_pcd=genrtd_pcd_cd, object_pcd=object_pcd)
                 self.chamfer_distance.update(pcd_gt, pcd_pred)
-
+                
                 last_cd = self.chamfer_distance.last_cd()
                 box = batch['size'][pcd_index].cpu()
                 cd_mean_as_pct_of_box.append((last_cd / box.mean())*100.)
 
+                best_index_emd = local_emd.best_index()
+                genrtd_pcd_emd = x_gen_evals[best_index_emd][pcd_index].squeeze(0)[mask]
+                self.emd.update(object_pcd, genrtd_pcd_emd)
+
                 if pcd_index == 0:
-                    visualization_1 = self.visualize_step_t(genrtd_pcd, object_pcd, viz_pcd)
-                    o3d.io.write_point_cloud(f'{self.logger.log_dir}/generated_pcd/visualizations/batch_{batch_idx}_object_{pcd_index}_seed_{best_index}_best.ply', visualization_1)
-                    random_choices = [i for i in range(num_val_samples) if i != best_index]
+                    visualization_1 = self.visualize_step_t(genrtd_pcd_cd, object_pcd, viz_pcd)
+                    o3d.io.write_point_cloud(f'{self.logger.log_dir}/generated_pcd/visualizations/batch_{batch_idx}_object_{pcd_index}_seed_{best_index_cd}_best_cd.ply', visualization_1)
+                    visualization_1 = self.visualize_step_t(genrtd_pcd_emd, object_pcd, viz_pcd)
+                    o3d.io.write_point_cloud(f'{self.logger.log_dir}/generated_pcd/visualizations/batch_{batch_idx}_object_{pcd_index}_seed_{best_index_emd}_best_emd.ply', visualization_1)
+                    
+                    random_choices = [i for i in range(num_val_samples) if i != best_index_cd and i != best_index_emd]
                     shuffle(random_choices)
                     for i in random_choices[0:2]:
                         genrtd_pcd_2 = x_gen_evals[i][pcd_index]
@@ -372,12 +380,16 @@ class DiT3D_Diffuser(LightningModule):
         cd_mean_as_pct_of_box = np.mean(cd_mean_as_pct_of_box)
         print(f'CD Mean: {cd_mean}\tCD Std: {cd_std}\tAs % of Box: {cd_mean_as_pct_of_box}')
 
+        emd_mean, emd_std = self.emd.compute()
+        print(f'emd Mean: {emd_mean}\temd Std: {emd_std}')
         self.log('test/cd_mean', cd_mean, on_step=True)
         self.log('test/cd_std', cd_std, on_step=True)
+        self.log('test/emd_mean', emd_mean, on_step=True)
+        self.log('test/emd_std', emd_std, on_step=True)
         self.log('test/cd_mean_as_pct_of_box', cd_mean_as_pct_of_box, on_step=True)
         torch.cuda.empty_cache()
 
-        return {'test/cd_mean': cd_mean, 'test/cd_std': cd_std, 'test/cd_mean_as_pct_of_box':cd_mean_as_pct_of_box,}
+        return {'test/cd_mean': cd_mean, 'test/cd_std': cd_std, 'test/cd_mean_as_pct_of_box':cd_mean_as_pct_of_box, 'test/emd_mean': emd_mean, 'test/emd_std': emd_std,}
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams['train']['lr'], betas=(0.9, 0.999))

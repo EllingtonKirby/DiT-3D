@@ -8,19 +8,21 @@ from tqdm import tqdm
 from diffusers import DPMSolverMultistepScheduler
 import click
 from models.models_dit3d import DiT3D_Diffuser
-from modules.metrics import ChamferDistance
+from modules.metrics import ChamferDistance, EMD
 from modules.three_d_helpers import build_two_point_clouds
 from datasets import dataset_mapper
+from modules.class_mapping import class_mapping
 
 def find_eligible_objects(dataloader, num_to_find=1, object_class='vehicle.car', min_points=None):
     targets = []
 
     for index, item in enumerate(dataloader):
         num_lidar_points = item['num_points'][0]
-        class_index = torch.argmax(item['class'])
         item['index'] = index
-        # if class_mapping[object_class] != class_index:
-        #     continue
+        class_index = item['class'].item()
+
+        if object_class != 'None' and class_mapping[object_class] != class_index:
+            continue
 
         if num_lidar_points > min_points:
             targets.append(item)
@@ -96,6 +98,7 @@ def denoise_object_from_pcd(model: DiT3D_Diffuser, x_object, x_center, x_size, x
     x_class = x_class.cuda()
 
     local_chamfer = ChamferDistance()
+    local_emd = EMD()
     x_gen_evals = []
     for i in tqdm(range(num_diff_samples)):
         torch.manual_seed(i)
@@ -105,13 +108,17 @@ def denoise_object_from_pcd(model: DiT3D_Diffuser, x_object, x_center, x_size, x
         x_gen_evals.append(x_gen_eval)    
         pcd_pred, pcd_gt = build_two_point_clouds(genrtd_pcd=x_gen_eval, object_pcd=x_init.squeeze(0).permute(1,0))
         local_chamfer.update(pcd_gt, pcd_pred)
+        local_emd.update(gt_pts=x_gen_eval, gen_pts=x_init.squeeze(0).permute(1,0))
         print(f"Seed {i} CD: {local_chamfer.last_cd()}")
 
-    best_index = local_chamfer.best_index()
-    print(f"Best seed: {best_index}")
-    x_gen_eval = x_gen_evals[best_index]
+    best_index_cd = local_chamfer.best_index()
+    best_index_emd = local_emd.best_index()
+    print(f"Best seed cd: {best_index_cd}")
+    print(f"Best seed emd: {best_index_emd}")
+    x_gen_eval_cd = x_gen_evals[best_index_cd]
+    x_gen_eval_emd = x_gen_evals[best_index_emd]
 
-    return x_gen_eval.cpu().detach().numpy(), x_object.cpu().detach().squeeze(0).permute(1,0).numpy()
+    return x_gen_eval_cd.cpu().detach().numpy(), x_gen_eval_emd.cpu().detach().numpy(), x_object.cpu().detach().squeeze(0).permute(1,0).numpy()
 
 def extract_object_info(object_info):
     x_object = object_info['pcd_object']
@@ -122,15 +129,16 @@ def extract_object_info(object_info):
 
     return x_object, x_center, x_size, x_orientation, x_class
 
-def find_pcd_and_test_on_object(dir_path, model, do_viz, objects):
+def find_pcd_and_test_on_object(dir_path, model, do_viz, objects, num_samples):
     for _, object_info in enumerate(objects):
-        x_gen, x_orig = denoise_object_from_pcd(
+        x_gen_cd, x_gen_emd, x_orig = denoise_object_from_pcd(
             model,
             *extract_object_info(object_info),
-            10,
+            num_samples,
             viz_path=f'{dir_path}' if do_viz else None
         )
-        np.savetxt(f'{dir_path}/{object_info["index"]}_generated.txt', x_gen)
+        np.savetxt(f'{dir_path}/{object_info["index"]}_generated_cd.txt', x_gen_cd)
+        np.savetxt(f'{dir_path}/{object_info["index"]}_generated_emd.txt', x_gen_emd)
         np.savetxt(f'{dir_path}/{object_info["index"]}_original.txt', x_orig)
 
 def find_pcd_and_interpolate_condition(dir_path, conditions, model, objects, do_viz):
@@ -139,7 +147,7 @@ def find_pcd_and_interpolate_condition(dir_path, conditions, model, objects, do_
         pcd, center_cyl, size, yaw, x_class = extract_object_info(object_info)
         np.savetxt(f'{dir_path}/object_{object_info["index"]}_orig.txt', pcd.cpu().detach().squeeze(0).permute(1,0).numpy())
         def do_gen(condition, index, center_cyl=center_cyl, size=size, yaw=yaw, pcd=pcd):
-                x_gen, _ = denoise_object_from_pcd(
+                x_gen, _, _ = denoise_object_from_pcd(
                     model=model,
                     x_object=pcd,
                     x_center=center_cyl,
@@ -239,12 +247,17 @@ def find_pcd_and_interpolate_condition(dir_path, conditions, model, objects, do_
               help='Number of examples to generate',
               default=1
             )
-def main(config, weights, output_path, name, task, class_name, split, min_points, do_viz, examples_to_generate):
+@click.option('--num_samples',
+              '-ds',
+              type=int,
+              help='Number of diffusion samples to take when recreating',
+              default=10
+            )
+def main(config, weights, output_path, name, task, class_name, split, min_points, do_viz, examples_to_generate, num_samples):
     dir_path = f'{output_path}/{name}'
     os.makedirs(dir_path, exist_ok=True)
     cfg = yaml.safe_load(open(config))
     cfg['diff']['s_steps'] = 500
-    cfg['diff']['uncond_w'] = 6.
     cfg['train']['batch_size'] = 1
     model = DiT3D_Diffuser.load_from_checkpoint(weights, hparams=cfg).cuda()
     model.eval()
@@ -255,7 +268,7 @@ def main(config, weights, output_path, name, task, class_name, split, min_points
     dataloader = module.train_dataloader() if split == 'train' else module.val_dataloader()
     objects = find_eligible_objects(dataloader, num_to_find=examples_to_generate, object_class=class_name, min_points=min_points)
     if task == 'recreate':
-        find_pcd_and_test_on_object(dir_path=dir_path, model=model, objects=objects, do_viz=do_viz)
+        find_pcd_and_test_on_object(dir_path=dir_path, model=model, objects=objects, do_viz=do_viz, num_samples=num_samples)
     if task == 'interpolate':
         find_pcd_and_interpolate_condition(
             dir_path=dir_path, 
