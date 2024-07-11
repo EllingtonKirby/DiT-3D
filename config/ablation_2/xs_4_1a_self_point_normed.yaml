@@ -1,12 +1,13 @@
 experiment:
-    id: xs_4_2a_cross_point_eval_ema
+    id: xs_4_1a_self_point_norm
 ##Data
 data:
     data_dir: '/home/ekirby/scania/ekirby/datasets/bikes_from_nuscenes/bikes_from_nuscenes_train_val.json'
     dataloader: 'nuscenes'
     points_per_object: -1
-    align_objects: False
+    align_objects: True
     stacking_type: max
+    normalize_points: True
 
 ##Training
 train:
@@ -34,9 +35,9 @@ diff:
 ##Network
 model:
     embeddings: point
-    num_conditions: 8
-    cyclic_conditions: 2
-    relative_angles: False
+    num_conditions: 7
+    cyclic_conditions: 1
+    relative_angles: True
     config: DiT-XS/4
-    attention: cross
+    attention: self
     pretrained: False

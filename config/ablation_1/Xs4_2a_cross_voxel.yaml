@@ -1,5 +1,5 @@
 experiment:
-    id: xs_4_2a_cross_voxel
+    id: xs_4_2a_cross_voxel_eval_ema
 ##Data
 data:
     data_dir: '/home/ekirby/scania/ekirby/datasets/bikes_from_nuscenes/bikes_from_nuscenes_train_val.json'
@@ -11,9 +11,9 @@ data:
 ##Training
 train:
     uncond_prob: 0.1
-    uncond_w: 6.
-    n_gpus: 1
-    num_workers: 8
+    uncond_w: 1.
+    n_gpus: 4
+    num_workers: 32
     max_epoch: 2000
     lr: 0.0001
     batch_size: 16

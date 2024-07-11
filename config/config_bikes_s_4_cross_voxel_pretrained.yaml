@@ -1,12 +1,10 @@
 experiment:
-    id: bikes_s_4_cross_voxel_sorted_pretrained_2_eval_3
+    id: bikes_s_4_cross_voxel_sorted_pretrained_2_eval_4
 
 ##Data
 data:
     data_dir: '/home/ekirby/scania/ekirby/datasets/bikes_from_nuscenes/bikes_from_nuscenes_train_val.json'
-    resolution: 0.05
     dataloader: 'nuscenes'
-    coordinates: 'cylindrical'
     points_per_object: -1
     align_objects: True
     stacking_type: max
@@ -15,8 +13,8 @@ data:
 train:
     uncond_prob: 0.1
     uncond_w: 1.0
-    n_gpus: 1
-    num_workers: 4
+    n_gpus: 4
+    num_workers: 32
     max_epoch: 10000
     lr: 0.0001
     batch_size: 16
@@ -36,8 +34,7 @@ diff:
 
 ##Network
 model:
-    out_dim: 96
-    embeddings: 'voxel'
+    embeddings: voxel
     num_conditions: 7
     cyclic_conditions: 1
     relative_angles: True
