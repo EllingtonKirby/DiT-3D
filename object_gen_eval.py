@@ -32,6 +32,19 @@ def find_eligible_objects(dataloader, num_to_find=1, object_class='vehicle.car',
 
     return targets
 
+def find_specific_objects(index, cfg):
+    cfg['data']['data_dir'] = '/home/ekirby/scania/ekirby/datasets/bikes_from_nuscenes/bikes_from_nuscenes_train_val_reversed.json'
+    module: LightningDataModule = dataset_mapper.dataloaders[cfg['data']['dataloader']](cfg)
+    dataloader = module.train_dataloader(shuffle=False)
+    objects = []
+    for i, item in enumerate(dataloader):
+        if i == index:
+            item['index'] = index
+            objects.append(item)
+            break
+
+    return objects
+
 def visualize_step_t(x_t, pcd):
     points = x_t.detach().cpu().numpy()
     pcd.points = o3d.utility.Vector3dVector(points)
@@ -109,7 +122,6 @@ def denoise_object_from_pcd(model: DiT3D_Diffuser, x_object, x_center, x_size, x
         pcd_pred, pcd_gt = build_two_point_clouds(genrtd_pcd=x_gen_eval, object_pcd=x_init.squeeze(0).permute(1,0))
         local_chamfer.update(pcd_gt, pcd_pred)
         local_emd.update(gt_pts=x_gen_eval, gen_pts=x_init.squeeze(0).permute(1,0))
-        print(f"Seed {i} CD: {local_chamfer.last_cd()}")
 
     best_index_cd = local_chamfer.best_index()
     best_index_emd = local_emd.best_index()
@@ -253,7 +265,13 @@ def find_pcd_and_interpolate_condition(dir_path, conditions, model, objects, do_
               help='Number of diffusion samples to take when recreating',
               default=10
             )
-def main(config, weights, output_path, name, task, class_name, split, min_points, do_viz, examples_to_generate, num_samples):
+@click.option('--specific_obj_index',
+              '-ind',
+              type=int,
+              help='Specific object index in sorted list to use',
+              default=None,
+            )
+def main(config, weights, output_path, name, task, class_name, split, min_points, do_viz, examples_to_generate, num_samples, specific_obj_index):
     dir_path = f'{output_path}/{name}'
     os.makedirs(dir_path, exist_ok=True)
     cfg = yaml.safe_load(open(config))
@@ -262,17 +280,18 @@ def main(config, weights, output_path, name, task, class_name, split, min_points
     model = DiT3D_Diffuser.load_from_checkpoint(weights, hparams=cfg).cuda()
     model.eval()
 
-    
-    module: LightningDataModule = dataset_mapper.dataloaders[cfg['data']['dataloader']](cfg)
-
-    dataloader = module.train_dataloader() if split == 'train' else module.val_dataloader()
-    objects = find_eligible_objects(dataloader, num_to_find=examples_to_generate, object_class=class_name, min_points=min_points)
+    if specific_obj_index != None:
+        objects = find_specific_objects(specific_obj_index, cfg)
+    else:
+        module: LightningDataModule = dataset_mapper.dataloaders[cfg['data']['dataloader']](cfg)
+        dataloader = module.train_dataloader() if split == 'train' else module.val_dataloader()
+        objects = find_eligible_objects(dataloader, num_to_find=examples_to_generate, object_class=class_name, min_points=min_points)
     if task == 'recreate':
         find_pcd_and_test_on_object(dir_path=dir_path, model=model, objects=objects, do_viz=do_viz, num_samples=num_samples)
     if task == 'interpolate':
         find_pcd_and_interpolate_condition(
             dir_path=dir_path, 
-            conditions=['cylinder_angle','cylinder_distance'], 
+            conditions=['yaw', 'cylinder_angle','cylinder_distance'], 
             model=model, 
             do_viz=do_viz, 
             objects=objects
