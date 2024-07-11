@@ -634,6 +634,19 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
 #                                   DiT Configs                                  #
 #################################################################################
 
+def DiT_XS_16(pretrained=False, **kwargs):
+
+    model = DiT(depth=12, hidden_size=192, context_dim=192, patch_size=32, num_heads=3, **kwargs)
+    if pretrained:
+        checkpoint = torch.load('/home/ekirby/workspace/DiT-3D/checkpoints/shapenet_s4_cross_voxel_2/last.ckpt', map_location='cpu')
+        if "ema" in checkpoint:  # supports ema checkpoints 
+            checkpoint = checkpoint["ema"]
+        checkpoint_blocks = {k: checkpoint[k] for k in checkpoint if k.startswith('blocks')}
+        # load pre-trained blocks from 2d DiT
+        msg = model.load_state_dict(checkpoint_blocks, strict=False)
+
+    return model
+
 def DiT_XS_4(pretrained=False, **kwargs):
 
     model = DiT(depth=12, hidden_size=192, context_dim=192, patch_size=4, num_heads=3, **kwargs)
@@ -648,5 +661,6 @@ def DiT_XS_4(pretrained=False, **kwargs):
     return model
 
 DiT3D_models_CrossAttn_Voxel = {
-    'DiT-XS/4':  DiT_XS_4,
+    'DiT-XS/4':   DiT_XS_4,
+    'DiT-XS/16':  DiT_XS_16,
 }

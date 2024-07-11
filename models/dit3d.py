@@ -562,10 +562,24 @@ def DiT_XS_4(pretrained=False, **kwargs):
 
     return model
 
+def DiT_XS_16(pretrained=False, **kwargs):
+
+    model = DiT(depth=12, hidden_size=192, num_heads=3, patch_size=16, **kwargs)
+    if pretrained:
+        checkpoint = torch.load('/home/ekirby/workspace/DiT-3D/checkpoints/shapenet_s_4_ema_1/shapenet_s_4_ema_1_epoch=9999.ckpt', map_location='cpu')
+        if "ema" in checkpoint:  # supports ema checkpoints 
+            checkpoint = checkpoint["ema"]
+        checkpoint_blocks = {k: checkpoint[k] for k in checkpoint if k.startswith('blocks')}
+        # load pre-trained blocks from 2d DiT
+        msg = model.load_state_dict(checkpoint_blocks, strict=False)
+
+    return model
+
 DiT3D_models = {
     'DiT-XL/2': DiT_XL_2,  'DiT-XL/4': DiT_XL_4,  'DiT-XL/8': DiT_XL_8,
     'DiT-L/2':  DiT_L_2,   'DiT-L/4':  DiT_L_4,   'DiT-L/8':  DiT_L_8,
     'DiT-B/2':  DiT_B_2,   'DiT-B/4':  DiT_B_4,   'DiT-B/8':  DiT_B_8,
     'DiT-S/2':  DiT_S_2,   'DiT-S/4':  DiT_S_4,   'DiT-S/8':  DiT_S_8,
-    'DiT-XS/4': DiT_XS_4,
+    'DiT-XS/4':  DiT_XS_4,
+    'DiT-XS/16': DiT_XS_16,
 }
