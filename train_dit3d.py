@@ -36,7 +36,8 @@ def set_deterministic():
               help='path to checkpoint file (.ckpt) to resume training.',
               default=None)
 @click.option('--test', '-t', is_flag=True, help='test mode')
-def main(config, weights, checkpoint, test):
+@click.option('--test_with_ema', '-te', is_flag=True, help='test with ema')
+def main(config, weights, checkpoint, test, test_with_ema):
     if not test:
         set_deterministic()
 
@@ -54,7 +55,8 @@ def main(config, weights, checkpoint, test):
             cfg = ckpt_cfg
 
         model = DiT3D_Diffuser.load_from_checkpoint(weights, hparams=cfg)
-        print(model.hparams)
+        if test_with_ema:
+            model.model = model.ema
     dl = cfg['data']['dataloader']
     data = dataloaders[dl](cfg)
 
