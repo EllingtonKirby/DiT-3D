@@ -22,6 +22,7 @@ class NuscenesObjectsSet(Dataset):
                 relative_angles=False, 
                 stacking_type='duplicate',
                 class_conditional=False,
+                normalize_points=False,
                 ):
         super().__init__()
         with open(data_dir, 'r') as f:
@@ -35,6 +36,7 @@ class NuscenesObjectsSet(Dataset):
         self.relative_angles = relative_angles
         self.stacking_type = stacking_type
         self.class_conditional = class_conditional
+        self.normalize_points = normalize_points
 
     def __len__(self):
         return self.nr_data
@@ -102,4 +104,17 @@ class NuscenesObjectsSet(Dataset):
             class_label = torch.tensor(class_mapping[class_name])
         else:
             class_label = torch.ones((1)).int()
+
+        if self.normalize_points:
+            # Determine the axis with the largest range in the point cloud
+            longest_axis_range = np.max(object_points, axis=0) - np.min(object_points, axis=0)
+            longest_axis = np.argmax(longest_axis_range).item()
+
+            # Find the min and max values along this longest axis
+            min_val = np.min(object_points[:, longest_axis])
+            max_val = np.max(object_points[:, longest_axis])
+
+            # Normalize the point cloud based on the longest axis
+            object_points = (object_points - min_val) / (max_val - min_val)
+
         return [object_points, center, torch.from_numpy(size), yaw, num_points, ring_indexes, class_label, padding_mask]

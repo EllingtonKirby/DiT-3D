@@ -24,7 +24,7 @@ class NuscenesObjectsDataModule(LightningDataModule):
         # Create datasets
         pass
 
-    def train_dataloader(self):
+    def train_dataloader(self, shuffle=True):
         collate = NuscenesObjectCollator(self.cfg['data']['stacking_type'])
 
         data_set = NuscenesObjectsSet(
@@ -34,9 +34,10 @@ class NuscenesObjectsDataModule(LightningDataModule):
                 align_objects=self.cfg['data']['align_objects'],
                 relative_angles=self.cfg['model']['relative_angles'],
                 stacking_type=self.cfg['data']['stacking_type'],
-                class_conditional=self.cfg['train']['class_conditional']
+                class_conditional=self.cfg['train']['class_conditional'],
+                normalize_points=self.cfg['data']['normalize_points'],
             )
-        loader = DataLoader(data_set, batch_size=self.cfg['train']['batch_size'], shuffle=True,
+        loader = DataLoader(data_set, batch_size=self.cfg['train']['batch_size'], shuffle=shuffle,
                             num_workers=self.cfg['train']['num_workers'], collate_fn=collate)
         return loader
 
@@ -50,7 +51,8 @@ class NuscenesObjectsDataModule(LightningDataModule):
                 align_objects=self.cfg['data']['align_objects'],
                 relative_angles=self.cfg['model']['relative_angles'],
                 stacking_type=self.cfg['data']['stacking_type'],
-                class_conditional=self.cfg['train']['class_conditional']
+                class_conditional=self.cfg['train']['class_conditional'],
+                normalize_points=self.cfg['data']['normalize_points'],
             )
         loader = DataLoader(data_set, batch_size=self.cfg['train']['batch_size'], shuffle=True,
                             num_workers=self.cfg['train']['num_workers'], collate_fn=collate)
@@ -66,7 +68,8 @@ class NuscenesObjectsDataModule(LightningDataModule):
                 align_objects=self.cfg['data']['align_objects'],
                 relative_angles=self.cfg['model']['relative_angles'],
                 stacking_type=self.cfg['data']['stacking_type'],
-                class_conditional=self.cfg['train']['class_conditional']
+                class_conditional=self.cfg['train']['class_conditional'],
+                normalize_points=self.cfg['data']['normalize_points'],
             )
         loader = DataLoader(data_set, batch_size=self.cfg['train']['batch_size'],
                              num_workers=self.cfg['train']['num_workers'], collate_fn=collate)
