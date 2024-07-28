@@ -7,9 +7,9 @@ import open3d as o3d
 from tqdm import tqdm
 from diffusers import DPMSolverMultistepScheduler
 import click
-from models.models_dit3d import DiT3D_Diffuser
+from models.models_dit3d_dropout import DiT3D_Diffuser
 from modules.metrics import ChamferDistance, EMD
-from modules.three_d_helpers import build_two_point_clouds, cylindrical_to_cartesian
+from modules.three_d_helpers import build_two_point_clouds, cylindrical_to_cartesian, angle_add
 from datasets import dataset_mapper
 from modules.class_mapping import class_mapping
 
@@ -60,7 +60,7 @@ def clip_points(points, min_bounds, max_bounds):
     clipped_points = torch.max(torch.min(points, max_bounds.unsqueeze(1)), min_bounds.unsqueeze(1)).squeeze(0)
     return clipped_points
 
-def p_sample_loop(model: DiT3D_Diffuser, x_t, x_cond, x_uncond, x_class, batch_indices, viz_path=None):
+def p_sample_loop(model: DiT3D_Diffuser, x_t, x_cond, x_class, batch_indices, viz_path=None):
     model.dpm_scheduler = DPMSolverMultistepScheduler(
         num_train_timesteps=model.t_steps,
         beta_start=model.hparams['diff']['beta_start'],
@@ -80,7 +80,7 @@ def p_sample_loop(model: DiT3D_Diffuser, x_t, x_cond, x_uncond, x_class, batch_i
         t = model.dpm_scheduler.timesteps[t].cuda()[None]
 
         with torch.no_grad():
-            noise_t = model.classfree_forward(x_t, t, x_class, x_cond, x_uncond)
+            noise_t = model.classfree_forward(x_t, t, x_class, x_cond)
         input_noise = x_t
 
         x_t = model.dpm_scheduler.step(noise_t, t, input_noise)['prev_sample']
@@ -107,7 +107,6 @@ def denoise_object_from_pcd(model: DiT3D_Diffuser, x_object, x_center, x_size, x
         x_cond = torch.hstack((x_center, x_size, x_orientation))
 
     x_cond = x_cond.cuda()
-    x_uncond = torch.zeros_like(x_cond).cuda()
     x_class = x_class.cuda()
 
     local_chamfer = ChamferDistance()
@@ -117,25 +116,37 @@ def denoise_object_from_pcd(model: DiT3D_Diffuser, x_object, x_center, x_size, x
         torch.manual_seed(i)
         torch.cuda.manual_seed(i)
         x_feats = torch.randn(x_init.shape, device=model.device)
-        x_gen_eval = p_sample_loop(model, x_feats, x_cond, x_uncond, x_class, batch_indices, viz_path=viz_path).squeeze(0).permute(1,0)
+        x_gen_eval = p_sample_loop(model, x_feats, x_cond, x_class, batch_indices, viz_path=viz_path).squeeze(0).permute(1,0)
         x_gen_evals.append(x_gen_eval)    
-        pcd_pred, pcd_gt = build_two_point_clouds(genrtd_pcd=x_gen_eval, object_pcd=x_init.squeeze(0).permute(1,0))
+        x_gen_pts = x_gen_eval[:, :3]
+        object_pts = x_init.squeeze(0).permute(1,0)[:, :3]
+        pcd_pred, pcd_gt = build_two_point_clouds(genrtd_pcd=x_gen_pts, object_pcd=object_pts)
         local_chamfer.update(pcd_gt, pcd_pred)
-        local_emd.update(gt_pts=x_gen_eval, gen_pts=x_init.squeeze(0).permute(1,0))
+        local_emd.update(gt_pts=x_gen_pts, gen_pts=object_pts)
 
     best_index_cd = local_chamfer.best_index()
     best_index_emd = local_emd.best_index()
     print(f"Best seed cd: {best_index_cd}")
     print(f"Best seed emd: {best_index_emd}")
-    x_gen_eval_cd = x_gen_evals[best_index_cd]
-    x_gen_eval_emd = x_gen_evals[best_index_emd]
+    x_gen_eval_cd = x_gen_evals[best_index_cd][:, :3].cpu().detach().numpy()
+    x_gen_eval_emd = x_gen_evals[best_index_emd][:, :3].cpu().detach().numpy()
     
-    center = torch.from_numpy(cylindrical_to_cartesian(x_center)).cuda()
-    x_gen_eval_cd += center
-    if best_index_cd != best_index_emd:
-        x_gen_eval_emd += center
+    cos_yaw = np.cos(x_orientation.item())
+    sin_yaw = np.sin(x_orientation.item())
+    rotation_matrix = np.array([
+        [cos_yaw, -sin_yaw, 0],
+        [sin_yaw, cos_yaw, 0],
+        [0, 0, 1]
+    ])
+    x_gen_eval_emd = np.dot(x_gen_eval_emd, rotation_matrix.T)
 
-    return x_gen_eval_cd.cpu().detach().numpy(), x_gen_eval_emd.cpu().detach().numpy(), x_object.cpu().detach().squeeze(0).permute(1,0).numpy()
+    og_pcd_cyl = x_center.clone()
+    
+    og_pcd_cyl[0,0] = angle_add(og_pcd_cyl[0,0], x_orientation.item())
+    center =  cylindrical_to_cartesian(og_pcd_cyl)
+    x_gen_eval_emd += center
+
+    return x_gen_eval_cd, x_gen_eval_emd, x_object.cpu().detach().squeeze(0).permute(1,0).numpy()[:, :3]
 
 def extract_object_info(object_info):
     x_object = object_info['pcd_object']
@@ -148,12 +159,27 @@ def extract_object_info(object_info):
 
 def find_pcd_and_test_on_object(dir_path, model, do_viz, objects, num_samples):
     for _, object_info in enumerate(objects):
+        pcd, center_cyl, size, yaw, x_class = extract_object_info(object_info)
         x_gen_cd, x_gen_emd, x_orig = denoise_object_from_pcd(
             model,
-            *extract_object_info(object_info),
+            pcd, center_cyl, size, yaw, x_class,
             num_samples,
             viz_path=f'{dir_path}' if do_viz else None
         )
+
+        cos_yaw = np.cos(yaw.item())
+        sin_yaw = np.sin(yaw.item())
+        rotation_matrix = np.array([
+            [cos_yaw, -sin_yaw, 0],
+            [sin_yaw, cos_yaw, 0],
+            [0, 0, 1]
+        ])
+        x_orig = np.dot(x_orig, rotation_matrix.T)
+        og_pcd_cyl = center_cyl.clone()
+        og_pcd_cyl[0,0] = angle_add(og_pcd_cyl[0,0], yaw.item())
+        center = cylindrical_to_cartesian(og_pcd_cyl)
+        x_orig += center
+
         np.savetxt(f'{dir_path}/{object_info["index"]}_generated_cd.txt', x_gen_cd)
         np.savetxt(f'{dir_path}/{object_info["index"]}_generated_emd.txt', x_gen_emd)
         np.savetxt(f'{dir_path}/{object_info["index"]}_original.txt', x_orig)
@@ -163,7 +189,8 @@ def find_pcd_and_interpolate_condition(dir_path, conditions, model, objects, do_
         print(f'Generating using car info {object_info["index"]}')
         pcd, center_cyl, size, yaw, x_class = extract_object_info(object_info)
         
-        og_pcd = pcd.cpu().detach().squeeze(0).permute(1,0).numpy()
+        og_pcd = pcd.cpu().detach().squeeze(0).permute(1,0).numpy()[:, :3]
+        
         cos_yaw = np.cos(yaw.item())
         sin_yaw = np.sin(yaw.item())
         rotation_matrix = np.array([
@@ -172,14 +199,14 @@ def find_pcd_and_interpolate_condition(dir_path, conditions, model, objects, do_
             [0, 0, 1]
         ])
         og_pcd = np.dot(og_pcd, rotation_matrix.T)
-
-        center_cyl[0,0] += yaw.item()
-        center = cylindrical_to_cartesian(center_cyl)
+        og_pcd_cyl = center_cyl.clone()
+        og_pcd_cyl[0,0] += yaw.item()
+        center = cylindrical_to_cartesian(og_pcd_cyl)
         og_pcd += center
         np.savetxt(f'{dir_path}/object_{object_info["index"]}_orig.txt', og_pcd)
 
         def do_gen(condition, index, center_cyl=center_cyl, size=size, yaw=yaw, pcd=pcd):
-                x_gen, _, _ = denoise_object_from_pcd(
+                _, x_gen, _ = denoise_object_from_pcd(
                     model=model,
                     x_object=pcd,
                     x_center=center_cyl,
