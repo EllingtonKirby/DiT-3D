@@ -1,5 +1,5 @@
 experiment:
-    id: xs_4_1a_self_point_norm_eval
+    id: xs_4_1a_self_pointnet_corrected
 ##Data
 data:
     data_dir: '/home/ekirby/scania/ekirby/datasets/bikes_from_nuscenes/bikes_from_nuscenes_train_val.json'
@@ -7,17 +7,17 @@ data:
     points_per_object: -1
     align_objects: True
     stacking_type: max
-    normalize_points: True
+    normalize_points: False
 
 ##Training
 train:
     uncond_prob: 0.1
     uncond_w: 1.
-    n_gpus: 4
-    num_workers: 32
+    n_gpus: 2
+    num_workers: 16
     max_epoch: 2000
     lr: 0.0001
-    batch_size: 16
+    batch_size: 64
     decay_lr: 1.0e-4
     class_conditional: False
     ema: True
@@ -34,7 +34,7 @@ diff:
 
 ##Network
 model:
-    embeddings: point
+    embeddings: pointnet
     num_conditions: 7
     cyclic_conditions: 1
     relative_angles: True

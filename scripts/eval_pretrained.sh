@@ -4,8 +4,8 @@ pip install .
 
 cd /home/ekirby/workspace/DiT-3D
 
-config=config/config_bikes_s_4_cross_voxel_pretrained.yaml
-weights=checkpoints/bikes_s_4_cross_voxel_sorted_pretrained_2/last.ckpt
+config=config/ablation_2/xs_4_1a_self_point_pretrained.yaml
+weights=checkpoints/xs_4_1a_self_point_pretrained/last.ckpt
 
 python train_dit3d.py -c $config -w $weights --test
 # python test_w_param.py -c $config -w $weights

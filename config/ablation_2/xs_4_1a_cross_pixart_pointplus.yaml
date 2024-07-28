@@ -1,5 +1,5 @@
 experiment:
-    id: xs_4_1a_self_point_norm_eval
+    id: xs_4_1a_cross_pixart_pointnetplus_eval
 ##Data
 data:
     data_dir: '/home/ekirby/scania/ekirby/datasets/bikes_from_nuscenes/bikes_from_nuscenes_train_val.json'
@@ -7,7 +7,7 @@ data:
     points_per_object: -1
     align_objects: True
     stacking_type: max
-    normalize_points: True
+    normalize_points: False
 
 ##Training
 train:
@@ -39,5 +39,5 @@ model:
     cyclic_conditions: 1
     relative_angles: True
     config: DiT-XS/4
-    attention: self
+    attention: cross
     pretrained: False

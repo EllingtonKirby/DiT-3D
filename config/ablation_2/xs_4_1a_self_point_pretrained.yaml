@@ -1,5 +1,5 @@
 experiment:
-    id: xs_4_1a_self_point_pretrained
+    id: xs_4_1a_self_point_pretrained_eval
 ##Data
 data:
     data_dir: '/home/ekirby/scania/ekirby/datasets/bikes_from_nuscenes/bikes_from_nuscenes_train_val.json'
@@ -13,8 +13,8 @@ data:
 train:
     uncond_prob: 0.1
     uncond_w: 1.
-    n_gpus: 6
-    num_workers: 40
+    n_gpus: 4
+    num_workers: 32
     max_epoch: 2000
     lr: 0.0001
     batch_size: 16
@@ -41,3 +41,4 @@ model:
     config: DiT-XS/4
     attention: flash
     pretrained: True
+    in_channels: 3

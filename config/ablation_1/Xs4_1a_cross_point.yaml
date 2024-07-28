@@ -7,6 +7,7 @@ data:
     points_per_object: -1
     align_objects: True
     stacking_type: max
+    normalize_points: False
 
 ##Training
 train:
