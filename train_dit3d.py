@@ -8,9 +8,8 @@ import numpy as np
 import torch
 import yaml
 from datasets.dataset_mapper import dataloaders
-
-
 from models.models_dit3d import DiT3D_Diffuser
+from models.models_dit3d_dropout import DiT3D_Diffuser as DiT3D_Diffuser_dropout
 
 def set_deterministic():
     np.random.seed(42)
@@ -42,21 +41,20 @@ def main(config, weights, checkpoint, test, test_with_ema):
         set_deterministic()
 
     cfg = yaml.safe_load(open(config))
-    # overwrite the data path in case we have defined in the env variables
-    if environ.get('TRAIN_DATABASE'):
-        cfg['data']['data_dir'] = environ.get('TRAIN_DATABASE')
 
     #Load data and model
     if weights is None:
-        model = DiT3D_Diffuser(cfg)
+        model = DiT3D_Diffuser(cfg) if 'improved_cfg' not in cfg['model'] else DiT3D_Diffuser_dropout(cfg)
     else:
         if test:
             ckpt_cfg = yaml.safe_load(open(config))
             cfg = ckpt_cfg
 
-        model = DiT3D_Diffuser.load_from_checkpoint(weights, hparams=cfg)
+        model = DiT3D_Diffuser if 'improved_cfg' not in cfg['model'] else DiT3D_Diffuser_dropout
+        model = model.load_from_checkpoint(weights, hparams=cfg)
         if test_with_ema:
             model.model = model.ema
+
     dl = cfg['data']['dataloader']
     data = dataloaders[dl](cfg)
 

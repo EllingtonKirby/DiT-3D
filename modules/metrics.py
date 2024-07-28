@@ -67,10 +67,10 @@ class RMSE():
 
         return
 
-    def update(self, gt_pcd, pt_pcd):
-        dist_pt_2_gt = np.asarray(pt_pcd.compute_point_cloud_distance(gt_pcd))
+    def update(self, gt, pt):
+        dist_pt_2_gt = np.sqrt(np.mean((gt.cpu().detach().numpy() - pt.cpu().detach().numpy())**2))
 
-        self.dists.append(np.mean(dist_pt_2_gt))
+        self.dists.append(dist_pt_2_gt)
 
     def reset(self):
         self.dists = []
