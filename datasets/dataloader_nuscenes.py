@@ -7,7 +7,7 @@ import json
 import numpy as np
 from nuscenes.utils.geometry_utils import points_in_box
 from nuscenes.utils.data_classes import Box, Quaternion
-from modules.three_d_helpers import cartesian_to_cylindrical
+from modules.three_d_helpers import cartesian_to_cylindrical, angle_difference
 import open3d as o3d
 from modules.class_mapping import class_mapping
 
@@ -23,6 +23,7 @@ class NuscenesObjectsSet(Dataset):
                 stacking_type='duplicate',
                 class_conditional=False,
                 normalize_points=False,
+                input_channels=3,
                 ):
         super().__init__()
         with open(data_dir, 'r') as f:
@@ -37,6 +38,7 @@ class NuscenesObjectsSet(Dataset):
         self.stacking_type = stacking_type
         self.class_conditional = class_conditional
         self.normalize_points = normalize_points
+        self.input_channels = input_channels
 
     def __len__(self):
         return self.nr_data
@@ -55,7 +57,9 @@ class NuscenesObjectsSet(Dataset):
         box = Box(center=center, size=size, orientation=orientation)
         
         points_from_object = points_in_box(box, points=points[:,:3].T, wlh_factor=self.volume_expansion)
-        object_points = torch.from_numpy(points[points_from_object])[:,:3]
+        object_points = points[points_from_object][:,:3]
+        intensity = points[points_from_object][:, 4]
+        intensity = (intensity / 15.) - 1 # 15 because 15 our distribution of intensities is centered on 15 and roughly normally distributed
         
         num_points = object_points.shape[0]
         if self.points_per_object > 0 and self.stacking_type != 'max':
@@ -80,11 +84,11 @@ class NuscenesObjectsSet(Dataset):
         else:
             padding_mask = torch.zeros((object_points.shape[0]))
         
-        ring_indexes = torch.zeros_like(object_points)
         if self.do_recenter:
             object_points -= center
         
-        center = cartesian_to_cylindrical(center[None,:])[0]
+        center = cartesian_to_cylindrical(center[None,:]).squeeze(0)
+        phi = center[0]
         yaw = orientation.yaw_pitch_roll[0]
         
         if self.align_objects:
@@ -98,7 +102,7 @@ class NuscenesObjectsSet(Dataset):
             object_points = np.dot(object_points, rotation_matrix.T)
 
         if self.relative_angles:
-            center[0] -= yaw
+            center[0] = angle_difference(phi, yaw)
 
         if self.class_conditional:
             class_label = torch.tensor(class_mapping[class_name])
@@ -117,4 +121,7 @@ class NuscenesObjectsSet(Dataset):
             # Normalize the point cloud based on the longest axis
             object_points = (object_points - min_val) / (max_val - min_val)
 
-        return [object_points, center, torch.from_numpy(size), yaw, num_points, ring_indexes, class_label, padding_mask]
+        if self.input_channels == 4:
+            object_points = np.column_stack((object_points, intensity))
+
+        return [object_points, center, torch.from_numpy(size), yaw, num_points, class_label, padding_mask, object_json['instance_token']]

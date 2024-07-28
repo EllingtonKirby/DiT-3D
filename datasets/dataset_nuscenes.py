@@ -36,6 +36,7 @@ class NuscenesObjectsDataModule(LightningDataModule):
                 stacking_type=self.cfg['data']['stacking_type'],
                 class_conditional=self.cfg['train']['class_conditional'],
                 normalize_points=self.cfg['data']['normalize_points'],
+                input_channels=self.cfg['model']['in_channels']
             )
         loader = DataLoader(data_set, batch_size=self.cfg['train']['batch_size'], shuffle=shuffle,
                             num_workers=self.cfg['train']['num_workers'], collate_fn=collate)
@@ -53,6 +54,7 @@ class NuscenesObjectsDataModule(LightningDataModule):
                 stacking_type=self.cfg['data']['stacking_type'],
                 class_conditional=self.cfg['train']['class_conditional'],
                 normalize_points=self.cfg['data']['normalize_points'],
+                input_channels=self.cfg['model']['in_channels']
             )
         loader = DataLoader(data_set, batch_size=self.cfg['train']['batch_size'], shuffle=True,
                             num_workers=self.cfg['train']['num_workers'], collate_fn=collate)
@@ -70,6 +72,7 @@ class NuscenesObjectsDataModule(LightningDataModule):
                 stacking_type=self.cfg['data']['stacking_type'],
                 class_conditional=self.cfg['train']['class_conditional'],
                 normalize_points=self.cfg['data']['normalize_points'],
+                input_channels=self.cfg['model']['in_channels']
             )
         loader = DataLoader(data_set, batch_size=self.cfg['train']['batch_size'],
                              num_workers=self.cfg['train']['num_workers'], collate_fn=collate)
@@ -88,8 +91,9 @@ class NuscenesObjectCollator:
 
         if self.max_stack:
             pcd_object = batch[0]
+            input_channels = pcd_object[0].shape[1]
             max_points = num_points_tensor.max().int().item()
-            padded_point_clouds = np.zeros((len(pcd_object), max_points, 3))
+            padded_point_clouds = np.zeros((len(pcd_object), max_points, input_channels))
             padding_mask = np.zeros((len(pcd_object), max_points))
             for i, pc in enumerate(pcd_object):
                 padded_point_clouds[i, :pc.shape[0], :] = pc
@@ -99,7 +103,7 @@ class NuscenesObjectCollator:
             padding_mask = torch.from_numpy(padding_mask).float()
         else:
             pcd_object = torch.from_numpy(np.stack(batch[0]))
-            padding_mask = torch.from_numpy(np.stack(batch[7]))
+            padding_mask = torch.from_numpy(np.stack(batch[6]))
         pcd_object = pcd_object.permute(0,2,1)
         batch_indices = torch.zeros(len(pcd_object))
 
@@ -109,9 +113,9 @@ class NuscenesObjectCollator:
             'orientation': torch.from_numpy(np.vstack(batch[3])).float(),
             'batch_indices': batch_indices,
             'num_points': num_points_tensor,
-            'ring_indexes': torch.vstack(batch[5]),
-            'class': torch.vstack(batch[6]),
-            'padding_mask': padding_mask
+            'class': torch.vstack(batch[5]),
+            'padding_mask': padding_mask,
+            'tokens': batch[7]
         }
 
 dataloaders = {
