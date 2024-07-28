@@ -12,7 +12,8 @@ from random import shuffle
 from modules.scheduling import beta_func
 from models.dit3d_pixart_pointnet_dropout import DiT3D_models_PixartDropoutCFG
 from models.dit3d_cross_attn_dropout import DiT3D_models_CrossAttn
-from models.dit3d_just_cross_attn import DiT3D_models_JustCrossAttn
+from models.dit3d_cross_attn_reordered import DiT3D_models_CrossAttnReordered
+from models.dit3d_cross_attn_noff import DiT3D_models_CrossNoFF
 from modules.metrics import ChamferDistance, EMD, RMSE
 from modules.three_d_helpers import build_two_point_clouds
 from copy import deepcopy
@@ -105,8 +106,10 @@ class DiT3D_Diffuser(LightningModule):
 
     def model_factory(self, pretrained, attention_type, point_embeddings, model_size, num_cyclic_conditions, num_classes, in_channels):
         factory = None
-        if attention_type == 'justcross':
-            factory = DiT3D_models_JustCrossAttn
+        if attention_type == 'reordered':
+            factory = DiT3D_models_CrossAttnReordered
+        elif attention_type == 'noff':
+            factory = DiT3D_models_CrossNoFF
         elif attention_type == 'cross' and point_embeddings == 'pointnet':
             factory = DiT3D_models_CrossAttn
         elif attention_type == 'pixart':
